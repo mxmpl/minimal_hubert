@@ -1,0 +1,6 @@
+num_classes = 100
+manifest = ""
+workdir = ""
+wandb_project = "minimal-hubert"
+wandb_name = "it1"
+wandb_mode = "offline"

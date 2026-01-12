@@ -1,0 +1,92 @@
+[project]
+name = "minimal-hubert"
+description = "Minimal implementation of HuBERT pretraining"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [{ name = "Maxime Poli" }]
+dependencies = [
+  "fastabx>=0.6.1",
+  "filelock>=3.20.2",
+  "orjson>=3.11.5",
+  "scikit-learn>=1.8.0",
+  "spidr[train]>=0.1.2",
+  "torch>=2.9.1",
+  "torchaudio>=2.9.1",
+  "torchcodec>=0.9.1",
+]
+dynamic = ["version"]
+
+[dependency-groups]
+dev = [
+  "ipykernel>=7.1.0",
+  "ruff>=0.14.10",
+  "tombi>=0.7.16",
+  "typos>=1.42.0",
+]
+test = [
+  "hypothesis>=6.150.0",
+  "pytest>=9.0.2",
+]
+
+[build-system]
+requires = ["hatch-vcs", "hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.ruff]
+line-length = 119
+
+[tool.ruff.lint]
+select = [
+  "A",  # flake8-builtins
+  "ARG",  # flake8-unused-arguments
+  "ANN",  # flake8-annotations
+  "B",  # flake8-bugbear
+  "BLE",  # flake8-blind-except
+  "C4",  # flake8-comprehensions
+  "C90",  # mccabe
+  "E",  # pycodestyle error
+  "EXE",  # flake8-executable
+  "F",  # Pyflakes
+  "FBT",  # flake8-boolean-trap
+  "FLY",  # flynt
+  "FURB",  # refurb
+  "G",  # flake8-logging-format
+  "I",  # isort
+  "ICN",  # flake8-import-conventions
+  "ISC",  # flake8-implicit-str-concat
+  "LOG",  # flake8-logging
+  "N",  # pep8-naming
+  "NPY",  # NumPy-specific rules
+  "PERF",  # Perflint
+  "PIE",  # flake8-pie
+  "PGH",  # pygrep-hooks
+  "PL",  # Pylint
+  "PTH",  # flake8-use-pathlib
+  "Q",  # flake8-quotes
+  "RET",  # flake8-return
+  "RSE",  # flake8-raise
+  "RUF",  # Ruff-specific rules
+  "SIM",  # flake8-simplify
+  "SLF",  # flake8-slots
+  "T10",  # flake8-debugger
+  "TC",  # flake8-type-checking
+  "TD",  # flake8-todos
+  "TID",  # flake8-tidy-imports
+  "UP",  # pyupgrade
+  "W",  # pycodestyle warning
+]
+
+[tool.ruff.lint.pylint]
+allow-magic-value-types = ["int", "str"]
+max-args = 10
+max-statements = 75
+
+[tool.ruff.lint.pep8-naming]
+extend-ignore-names = ["F"]  # from torch.nn import functional as F
+
+[tool.typos.default.extend-words]
+interm = "interm"
