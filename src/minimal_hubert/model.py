@@ -220,3 +220,48 @@ def state_dict_from_torchaudio_or_huggingface(state_dict: dict[str, Tensor]) -> 
         new_state_dict["feature_weight"] = torch.tensor(FEATURE_WEIGHT)
         new_state_dict["logit_generator.logit_temp"] = torch.tensor(LOGIT_TEMPERATURE)
     return new_state_dict
+
+
+def _fix_state_dict_key_s3prl(key: str) -> str:
+    if key == "mask_emb":
+        return "mask_embedding"
+    if key == "label_embs_concat":
+        return "logit_generator.label_embeddings"
+    key = re.sub(r"^wav2vec2\.", "", key)
+    key = re.sub(r"^mask_generator\.", "", key)
+    key = re.sub(r"^encoder\.transformer\.", "encoder.", key)
+    key = re.sub(r"^feature_projection\.", "feature_projection.0.", key)
+    key = re.sub(r"^encoder\.feature_projection\.", "feature_projection.0.", key)
+    key = re.sub(r"\.out_proj\.", ".proj.", key)
+    key = re.sub(r"\.fc1\.", ".feed_forward.intermediate_dense.", key)
+    key = re.sub(r"\.fc2\.", ".feed_forward.output_dense.", key)
+    key = re.sub(r"\.self_attn\.", ".attention.", key)
+    key = re.sub(r"\.self_attn_layer_norm\.", ".layer_norm.", key)
+    key = re.sub(r"(feature_extractor\.conv_layers\.\d+)\.0\.weight", r"\1.conv.weight", key)
+    key = re.sub(r"(feature_extractor\.conv_layers\.\d+)\.2", r"\1.layer_norm", key)
+    key = re.sub(r"^post_extract_proj\.", "feature_projection.0.projection.", key)
+    key = re.sub(r"^layer_norm\.", "feature_projection.0.layer_norm.", key)
+    key = re.sub(r"^final_proj\.", "logit_generator.final_proj.", key)
+    key = re.sub(r"\.weight_g", ".parametrizations.weight.original0", key)
+    key = re.sub(r"\.weight_v", ".parametrizations.weight.original1", key)
+    return re.sub(r"^encoder\.pos_conv\.", "encoder.pos_conv_embed.convs.", key)
+
+
+def state_dict_from_s3prl(state_dict: dict[str, Tensor]) -> dict[str, Tensor]:
+    new_state_dict = {_fix_state_dict_key_s3prl(k): v for k, v in state_dict.items()}
+    qkv = {"weight": defaultdict(dict), "bias": defaultdict(dict)}
+    for key, tensor in new_state_dict.items():
+        match = re.match(r"^(encoder\.layers\.\d+\.attention)\.(q|k|v)_proj\.(weight|bias)$", key)
+        if match:
+            layer, group, param = match.groups()
+            qkv[param][layer][group] = tensor
+    for weight in ["weight", "bias"]:
+        for layer in qkv[weight]:
+            q, k, v = qkv[weight][layer]["q"], qkv[weight][layer]["k"], qkv[weight][layer]["v"]
+            new_state_dict[f"{layer}.qkv.{weight}"] = torch.cat((q, k, v), dim=0)
+            for group in ["q", "k", "v"]:
+                del new_state_dict[f"{layer}.{group}_proj.{weight}"]
+    if "logit_generator.label_embeddings" in new_state_dict:
+        new_state_dict["feature_weight"] = torch.tensor(FEATURE_WEIGHT)
+        new_state_dict["logit_generator.logit_temp"] = torch.tensor(LOGIT_TEMPERATURE)
+    return new_state_dict
