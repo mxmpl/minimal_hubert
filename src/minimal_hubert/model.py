@@ -116,10 +116,11 @@ class HuBERTPretrainModel(nn.Module):
         *,
         attention_mask: Tensor | None = None,
         num_layers: int | None = None,
+        before_residual: bool = True,
     ) -> list[Tensor]:
         x = self.feature_extractor(waveforms)
         x = self.feature_projection(x)
-        return self.encoder.get_intermediate_outputs(x, attention_mask, num_layers)
+        return self.encoder.get_intermediate_outputs(x, attention_mask, num_layers, before_residual=before_residual)
 
     def forward(
         self,
