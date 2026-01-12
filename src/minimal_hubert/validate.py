@@ -12,14 +12,14 @@ from torch.utils.data import DataLoader
 from .config import hubert_data_config
 from .data import build_dataloader_with_labels
 from .features import split_for_distributed
-from .model import HuBERTPretrainModel
+from .model import HuBERTPretrain
 
 logger = logging.getLogger()
 
 
 @torch.no_grad()
 def validate(
-    model: HuBERTPretrainModel,
+    model: HuBERTPretrain,
     loader: DataLoader,
     device: torch.device,
     dtype: torch.dtype,
@@ -59,7 +59,7 @@ def validate_all_checkpoints(
     lock = FileLock(f"{output}.lock")
     paths = sorted(Path(checkpoints).glob("*.pt"))
     for path in split_for_distributed(paths):
-        model = HuBERTPretrainModel.from_pretrained(path).to(device)
+        model = HuBERTPretrain.from_pretrained(path).to(device)
         losses = validate(model, loader, device, dtype)
         with lock, Path(output).open("ab") as f:
             f.write(orjson.dumps({"name": path.stem} | losses, option=orjson.OPT_APPEND_NEWLINE))

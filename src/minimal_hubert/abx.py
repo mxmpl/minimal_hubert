@@ -11,12 +11,12 @@ from torchcodec.decoders import AudioDecoder
 from tqdm import tqdm
 
 from .data import SAMPLE_RATE
-from .model import HuBERTPretrainModel
+from .model import HuBERTPretrain
 from .utils import slurm_job_tmpdir
 
 
 def extract_features(
-    model: HuBERTPretrainModel,
+    model: HuBERTPretrain,
     audio: Path,
     features: Path,
     layers: set[int],
@@ -49,7 +49,7 @@ def compute_and_save_abx(
     tmpdir: str | Path | None = None,
 ) -> None:
     item_name = Path(item).stem
-    model = HuBERTPretrainModel.from_pretrained(checkpoint)
+    model = HuBERTPretrain.from_pretrained(checkpoint)
     layers = set(range(1, 13) if layers is None else layers)
     assert min(layers) >= 1
     assert max(layers) <= 12

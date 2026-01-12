@@ -20,7 +20,7 @@ from tqdm import tqdm
 
 from .config import Config, read_config
 from .data import build_dataloader_with_labels
-from .model import HuBERTPretrainModel
+from .model import HuBERTPretrain
 
 logger = logging.getLogger()
 
@@ -59,7 +59,7 @@ def pretrain(cfg: Config) -> None:
         logger.info("Building model, optimizer, and dataloaders")
         device = torch.device(f"cuda:{os.environ['LOCAL_RANK']}")
         dtype = {"float32": torch.float32, "float16": torch.float16, "bfloat16": torch.bfloat16}[cfg.optimizer.dtype]
-        model = HuBERTPretrainModel(cfg.num_classes).to(device).train()
+        model = HuBERTPretrain(cfg.num_classes).to(device).train()
         optimizer = AdamW(
             model.parameters(),
             lr=cfg.optimizer.lr,

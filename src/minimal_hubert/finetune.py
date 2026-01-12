@@ -16,7 +16,7 @@ from torch.optim import AdamW, Optimizer, lr_scheduler
 from tqdm import tqdm
 
 from .data import build_dataloader_with_labels
-from .model import HuBERTPretrainModel
+from .model import HuBERTPretrain
 
 
 def tristage_scheduler(
@@ -58,7 +58,7 @@ def finetune(name: str, workdir: Path, checkpoint: Path, manifest: str) -> None:
         wandb.init(project="discophon-hubert-ft", name=name, mode="offline", dir=workdir)
         stack.callback(wandb.finish)
         device = torch.device("cuda")
-        model = HuBERTPretrainModel(256).to(device).train()
+        model = HuBERTPretrain(256).to(device).train()
         state_dict = torch.load(checkpoint)["model"]
         del state_dict["logit_generator.label_embeddings"]
         model.load_state_dict(state_dict, strict=False)

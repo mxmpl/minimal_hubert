@@ -46,13 +46,12 @@ class LogitGenerator(nn.Module):
 
 
 def hubert_base_components(
-    num_classes: int,
     encoder_projection_dropout: float,
     encoder_attention_dropout: float,
     encoder_ff_interm_dropout: float,
     encoder_dropout: float,
     encoder_layer_drop: float,
-) -> tuple[FeatureExtractor, nn.Sequential, Transformer, LogitGenerator, nn.Parameter]:
+) -> tuple[FeatureExtractor, nn.Sequential, Transformer, nn.Parameter]:
     blocks, in_channels = nn.ModuleList(), 1
     for i, (out_channels, kernel_size, stride) in enumerate(DEFAULT_CONV_LAYER_CONFIG):
         norm = nn.GroupNorm(num_groups=out_channels, num_channels=out_channels, affine=True) if i == 0 else None
@@ -72,15 +71,13 @@ def hubert_base_components(
         FeatureProjection(DEFAULT_CONV_LAYER_CONFIG[-1][0], 768),
         nn.Dropout(encoder_projection_dropout),
     )
-    logit_generator = LogitGenerator(768, num_classes, 256)
     mask_embedding = nn.Parameter(torch.FloatTensor(768))
-    return feature_extractor, feature_projection, encoder, logit_generator, mask_embedding
+    return feature_extractor, feature_projection, encoder, mask_embedding
 
 
-class HuBERTPretrainModel(nn.Module):
+class HuBERT(nn.Module):
     def __init__(
         self,
-        num_classes: int,
         *,
         encoder_projection_dropout: float = 0.1,
         encoder_attention_dropout: float = 0.1,
@@ -89,16 +86,12 @@ class HuBERTPretrainModel(nn.Module):
         encoder_layer_drop: float = 0.05,
     ) -> None:
         super().__init__()
-        self.feature_weight = nn.Buffer(torch.tensor(FEATURE_WEIGHT))
-        self.feature_extractor, self.feature_projection, self.encoder, self.logit_generator, self.mask_embedding = (
-            hubert_base_components(
-                num_classes,
-                encoder_projection_dropout,
-                encoder_attention_dropout,
-                encoder_ff_interm_dropout,
-                encoder_dropout,
-                encoder_layer_drop,
-            )
+        self.feature_extractor, self.feature_projection, self.encoder, self.mask_embedding = hubert_base_components(
+            encoder_projection_dropout,
+            encoder_attention_dropout,
+            encoder_ff_interm_dropout,
+            encoder_dropout,
+            encoder_layer_drop,
         )
         self.init_weights_()
 
@@ -123,12 +116,54 @@ class HuBERTPretrainModel(nn.Module):
         return self.encoder.get_intermediate_outputs(x, attention_mask, num_layers, before_residual=before_residual)
 
     def forward(
+        self, waveforms: Tensor, *, mask: Tensor | None = None, attention_mask: Tensor | None = None
+    ) -> Tensor:
+        x = self.feature_extractor(waveforms)
+        x = self.feature_projection(x)
+        if mask is not None:
+            x = torch.where(mask.unsqueeze(-1), self.mask_embedding.to(x.dtype).expand_as(x), x)
+        else:
+            mask = torch.ones((x.shape[0], x.shape[1]), dtype=torch.bool, device=x.device)
+        return self.encoder(x, attention_mask)
+
+    @classmethod
+    def from_pretrained(cls, path: str | Path) -> "HuBERT":
+        state_dict = torch.load(path, map_location="cpu")
+        if "model" in state_dict:
+            state_dict = state_dict["model"]
+        model = cls()
+        model.load_state_dict(state_dict)
+        return model.eval()
+
+
+class HuBERTPretrain(HuBERT):
+    def __init__(
+        self,
+        num_classes: int,
+        *,
+        encoder_projection_dropout: float = 0.1,
+        encoder_attention_dropout: float = 0.1,
+        encoder_ff_interm_dropout: float = 0.0,
+        encoder_dropout: float = 0.1,
+        encoder_layer_drop: float = 0.05,
+    ) -> None:
+        super().__init__(
+            encoder_projection_dropout=encoder_projection_dropout,
+            encoder_attention_dropout=encoder_attention_dropout,
+            encoder_ff_interm_dropout=encoder_ff_interm_dropout,
+            encoder_dropout=encoder_dropout,
+            encoder_layer_drop=encoder_layer_drop,
+        )
+        self.feature_weight = nn.Buffer(torch.tensor(FEATURE_WEIGHT))
+        self.logit_generator = LogitGenerator(768, num_classes, 256)
+
+    def forward(  # ty: ignore[invalid-method-override]
         self,
         waveforms: Tensor,
         labels: Tensor,
         *,
-        mask: Tensor,
-        attention_mask: Tensor | None = None,
+        mask: Tensor | None,
+        attention_mask: Tensor | None,
     ) -> tuple[Tensor, dict[str, Tensor]]:
         x = self.feature_extractor(waveforms)
         features_pen = x.float().pow(2).mean()
@@ -145,7 +180,7 @@ class HuBERTPretrainModel(nn.Module):
         return features_loss + logits_loss, {"feature_loss": features_loss, "logits_loss": logits_loss}
 
     @classmethod
-    def from_pretrained(cls, path: str | Path) -> "HuBERTPretrainModel":
+    def from_pretrained(cls, path: str | Path) -> "HuBERTPretrain":
         state_dict = torch.load(path, map_location="cpu")
         if "model" in state_dict:
             state_dict = state_dict["model"]
@@ -156,15 +191,18 @@ class HuBERTPretrainModel(nn.Module):
 
 
 def _fix_state_dict_key(key: str) -> str:
+    if key == "masked_spec_embed":
+        return "mask_embedding"
     key = re.sub(r"^wav2vec2\.", "", key)
     key = re.sub(r"^mask_generator\.", "", key)
     key = re.sub(r"^encoder\.transformer\.", "encoder.", key)
+    key = re.sub(r"^feature_projection\.", "feature_projection.0.", key)
     key = re.sub(r"^encoder\.feature_projection\.", "feature_projection.0.", key)
     key = re.sub(r"\.out_proj\.", ".proj.", key)
     return re.sub(r"^encoder\.pos_conv_embed\.conv\.", "encoder.pos_conv_embed.convs.0.", key)
 
 
-def state_dict_from_torchaudio(state_dict: dict[str, Tensor]) -> dict[str, Tensor]:
+def state_dict_from_torchaudio_or_huggingface(state_dict: dict[str, Tensor]) -> dict[str, Tensor]:
     new_state_dict = {_fix_state_dict_key(k): v for k, v in state_dict.items()}
     qkv = {"weight": defaultdict(dict), "bias": defaultdict(dict)}
     for key, tensor in new_state_dict.items():
@@ -178,6 +216,7 @@ def state_dict_from_torchaudio(state_dict: dict[str, Tensor]) -> dict[str, Tenso
             new_state_dict[f"{layer}.qkv.{weight}"] = torch.cat((q, k, v), dim=0)
             for group in ["q", "k", "v"]:
                 del new_state_dict[f"{layer}.{group}_proj.{weight}"]
-    new_state_dict["feature_weight"] = torch.tensor(FEATURE_WEIGHT)
-    new_state_dict["logit_generator.logit_temp"] = torch.tensor(LOGIT_TEMPERATURE)
+    if "logit_generator.label_embeddings" in new_state_dict:
+        new_state_dict["feature_weight"] = torch.tensor(FEATURE_WEIGHT)
+        new_state_dict["logit_generator.logit_temp"] = torch.tensor(LOGIT_TEMPERATURE)
     return new_state_dict

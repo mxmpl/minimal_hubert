@@ -1,3 +1,3 @@
-from .model import HuBERTPretrainModel
+from .model import HuBERT, HuBERTPretrain
 
-__all__ = ["HuBERTPretrainModel"]
+__all__ = ["HuBERTModel", "HuBERTPretrain"]

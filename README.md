@@ -27,9 +27,9 @@ uv sync
 **Load a pretrained model:**
 
 ```python
-from minimal_hubert import HuBERTPretrainModel
+from minimal_hubert import HuBERTPretrain
 
-model = HuBERTPretrainModel.from_pretrained("./path/to/checkpoint.pt")
+model = HuBERTPretrain.from_pretrained("./path/to/checkpoint.pt")
 ```
 
 This method can load a checkpoint obtained with the package, but also from torchaudio or HuggingFace.
@@ -226,9 +226,9 @@ HuBERT:
 ```bibtex
 @article{
   9585401,
-  title={HuBERT: Self-Supervised Speech Representation Learning by Masked Prediction of Hidden Units}, 
+  title={HuBERT: Self-Supervised Speech Representation Learning by Masked Prediction of Hidden Units},
   author={Hsu, Wei-Ning and Bolte, Benjamin and Tsai, Yao-Hung Hubert and Lakhotia, Kushal and Salakhutdinov, Ruslan and Mohamed, Abdelrahman},
-  journal={IEEE/ACM Transactions on Audio, Speech, and Language Processing}, 
+  journal={IEEE/ACM Transactions on Audio, Speech, and Language Processing},
   year={2021},
   volume={29},
   number={},

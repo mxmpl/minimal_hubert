@@ -8,7 +8,7 @@ from torchaudio.compliance import kaldi
 from torchaudio.functional import compute_deltas
 from tqdm import tqdm
 
-from .model import HuBERTPretrainModel
+from .model import HuBERTPretrain
 from .utils import split_for_distributed
 
 
@@ -43,7 +43,7 @@ def compute_and_save_hubert_features(
     root = commonpath(dataset.manifest["path"])
     indices = split_for_distributed(list(range(len(dataset))))
     dest = Path(root_features)
-    model = HuBERTPretrainModel.from_pretrained(checkpoint).cuda()
+    model = HuBERTPretrain.from_pretrained(checkpoint).cuda()
     for i in tqdm(indices):
         name = Path(dataset.manifest[i, "path"]).relative_to(root).with_suffix(".pt")
         waveform = dataset[i].unsqueeze(0).cuda()
