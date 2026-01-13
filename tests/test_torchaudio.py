@@ -2,6 +2,7 @@ from copy import deepcopy
 
 import pytest
 import torch
+from spidr.data.dataset import DEFAULT_CONV_LAYER_CONFIG, conv_length
 from torch import Tensor, nn
 from torch.nn import functional as F
 from torchaudio.models import HuBERTPretrainModel as ReferenceHuBERT
@@ -10,32 +11,31 @@ from torchaudio.models import hubert_pretrain_base
 from minimal_hubert import HuBERTPretrain as MyHuBERT
 from minimal_hubert.model import state_dict_from_torchaudio_or_huggingface
 
-# To replace by hypothesis
-BATCH, LENGTH = 8, 16_000
-CONV_LENGTH = 49
-LOW, HIGH_MINUS_LOW = 0, 10
-
 
 @pytest.fixture(scope="module")
-def ref_hubert(device: torch.device) -> ReferenceHuBERT:
+def torchaudio_hubert(device: torch.device) -> ReferenceHuBERT:
     return hubert_pretrain_base().eval().to(device)
 
 
 @pytest.fixture(scope="module")
-def num_classes(ref_hubert: ReferenceHuBERT) -> int:
-    return ref_hubert.logit_generator.label_embeddings.size(0)
+def num_classes(torchaudio_hubert: ReferenceHuBERT) -> int:
+    return torchaudio_hubert.logit_generator.label_embeddings.size(0)
 
 
 @pytest.fixture(scope="module")
-def my_hubert(ref_hubert: ReferenceHuBERT, num_classes: int, device: torch.device) -> MyHuBERT:
+def my_hubert(torchaudio_hubert: ReferenceHuBERT, num_classes: int, device: torch.device) -> MyHuBERT:
     model = MyHuBERT(num_classes).eval().to(device)
-    model.load_state_dict(state_dict_from_torchaudio_or_huggingface(ref_hubert.state_dict()))
+    model.load_state_dict(state_dict_from_torchaudio_or_huggingface(torchaudio_hubert.state_dict()))
     return model
 
 
 @torch.no_grad
-def test_torchaudio_encoder_forward(my_hubert: MyHuBERT, ref_hubert: ReferenceHuBERT, waveforms: Tensor) -> None:
-    x, _ = ref_hubert.wav2vec2(waveforms)
+def test_torchaudio_encoder_forward(
+    my_hubert: MyHuBERT,
+    torchaudio_hubert: ReferenceHuBERT,
+    waveforms: Tensor,
+) -> None:
+    x, _ = torchaudio_hubert.wav2vec2(waveforms)
     y = my_hubert.feature_extractor(waveforms)
     y = my_hubert.feature_projection(y)
     y = my_hubert.encoder(y)
@@ -43,8 +43,12 @@ def test_torchaudio_encoder_forward(my_hubert: MyHuBERT, ref_hubert: ReferenceHu
 
 
 @torch.no_grad
-def test_torchaudio_encoder_intermediate(my_hubert: MyHuBERT, ref_hubert: ReferenceHuBERT, waveforms: Tensor) -> None:
-    x, _ = ref_hubert.wav2vec2.extract_features(waveforms)
+def test_torchaudio_encoder_intermediate(
+    my_hubert: MyHuBERT,
+    torchaudio_hubert: ReferenceHuBERT,
+    waveforms: Tensor,
+) -> None:
+    x, _ = torchaudio_hubert.wav2vec2.extract_features(waveforms)
     y = my_hubert.get_intermediate_outputs(waveforms, before_residual=False)
     for xi, yi in zip(x, y, strict=True):
         torch.testing.assert_close(xi, yi)
@@ -55,13 +59,13 @@ class DummyMaskGenerator(nn.Module):
         super().__init__()
         self.mask_embedding = embedding
 
-    def get_mask(self) -> Tensor:
+    def get_mask(self, shape: tuple[int, ...]) -> Tensor:
         torch.manual_seed(0)
         proba = 0.5
-        return torch.randn((BATCH, CONV_LENGTH), dtype=torch.float32) > proba
+        return torch.randn(shape, dtype=torch.float32) > proba
 
     def forward(self, x: Tensor, _: Tensor | None = None) -> tuple[Tensor, Tensor | None]:
-        mask = self.get_mask().to(x.device)
+        mask = self.get_mask((x.size(0), x.size(1))).to(x.device)
         x[mask] = self.mask_embedding.to(x.dtype)
         return x, mask
 
@@ -90,18 +94,19 @@ def torchaudio_hubert_loss(
 @torch.no_grad
 def test_torchaudio_loss(
     my_hubert: MyHuBERT,
-    ref_hubert: ReferenceHuBERT,
+    torchaudio_hubert: ReferenceHuBERT,
     waveforms: Tensor,
     num_classes: int,
 ) -> None:
-    ref_hubert = deepcopy(ref_hubert)
-    mask_generator = DummyMaskGenerator(ref_hubert.mask_generator.mask_embedding)
-    ref_hubert.mask_generator = mask_generator
+    torchaudio_hubert = deepcopy(torchaudio_hubert)
+    mask_generator = DummyMaskGenerator(torchaudio_hubert.mask_generator.mask_embedding)
+    torchaudio_hubert.mask_generator = mask_generator
 
-    labels = torch.randint(0, num_classes, (BATCH, CONV_LENGTH), device=waveforms.device)
-    mask = mask_generator.get_mask().to(waveforms.device)
+    shape = (waveforms.size(0), int(conv_length(DEFAULT_CONV_LAYER_CONFIG, waveforms.size(1))))
+    labels = torch.randint(0, num_classes, shape, device=waveforms.device)
+    mask = mask_generator.get_mask(shape).to(waveforms.device)
     x = torchaudio_hubert_loss(
-        *ref_hubert(waveforms, labels),
+        *torchaudio_hubert(waveforms, labels),
         masked_weight=1.0,
         unmasked_weight=0.0,
         feature_weight=1.0,
