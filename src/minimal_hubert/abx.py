@@ -6,11 +6,11 @@ import orjson
 import torch
 from fastabx import zerospeech_abx
 from filelock import FileLock
+from spidr.config import SAMPLE_RATE
 from torch.nn import functional as F
 from torchcodec.decoders import AudioDecoder
 from tqdm import tqdm
 
-from .data import SAMPLE_RATE
 from .model import HuBERTPretrain
 from .utils import slurm_job_tmpdir
 
@@ -58,7 +58,7 @@ def compute_and_save_abx(
         extract_features(model, Path(audio), Path(features), layers, extension=extension)
         for layer in layers:
             this_features = Path(features) / str(layer)
-            for speaker in ["within", "across"]:
+            for speaker in ("within", "across"):
                 score = zerospeech_abx(item, this_features, max_size_group=10, max_x_across=5, speaker=speaker)
                 result = {"item": item_name, "layer": layer, "speaker": speaker, "score": score}
                 with lock, Path(output).open("ab") as f:
