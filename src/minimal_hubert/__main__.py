@@ -22,9 +22,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     from .config import read_config
-    from .pretrain import pretrain
+    from .train import train
 
     init_logger()
-    jobs = [(pretrain, (read_config(cfg),)) for cfg in args.configs]
+    jobs = [(train, (read_config(cfg),)) for cfg in args.configs]
     name = jobs[0][1][0].run.wandb_name
     launch_with_submitit(name, jobs, args.dump, slurm_config_parse_args(args), copy_code=False)

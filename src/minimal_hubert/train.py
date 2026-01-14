@@ -45,7 +45,7 @@ class LinearDecayLRScheduler(LRScheduler):
         return [base_lr * pct_remaining for base_lr in self.base_lrs]
 
 
-def pretrain(cfg: Config) -> None:
+def train(cfg: Config) -> None:
     with ExitStack() as stack:
         logger.info("Starting job")
         setup_training(cfg.run.random_seed, use_deterministic=cfg.run.use_deterministic)
@@ -140,4 +140,4 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("config", type=str)
     cfg = read_config(parser.parse_args().config)
-    pretrain(cfg)
+    train(cfg)
