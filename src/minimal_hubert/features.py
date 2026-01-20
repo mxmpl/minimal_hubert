@@ -40,7 +40,7 @@ def compute_and_save_hubert_features(
     layer: int,
 ) -> None:
     dataset = speech_dataset(path_manifest, normalize=True)
-    root = commonpath(dataset.manifest["path"])
+    root = commonpath(dataset.manifest["path"].to_list())
     indices = split_for_distributed(list(range(len(dataset))))
     dest = Path(root_features)
     model = HuBERTPretrain.from_pretrained(checkpoint).cuda()
@@ -56,13 +56,13 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Extract features using MFCC or HuBERT")
-    parser.add_argument("path-manifest", type=Path, help="Path to the manifest file")
-    parser.add_argument("root-features", type=Path, help="Root directory for output features")
+    parser.add_argument("manifest", type=Path, help="Path to the manifest file")
+    parser.add_argument("features", type=Path, help="Root directory for output features")
     parser.add_argument("--type", required=True, choices=["mfcc", "hubert"], help="Feature type: 'mfcc' or 'hubert'")
-    parser.add_argument("--path-checkpoint", type=Path, help="Path to HuBERT checkpoint file")
+    parser.add_argument("--checkpoint", type=Path, help="Path to HuBERT checkpoint file")
     parser.add_argument("--layer", type=int, help="Layer number to extract features from")
     args = parser.parse_args()
     if args.type == "mfcc":
-        compute_and_save_mfccs(args.path_manifest, args.root_features)
+        compute_and_save_mfccs(args.manifest, args.features)
     else:
-        compute_and_save_hubert_features(args.path_manifest, args.root_features, args.path_checkpoint, args.layer)
+        compute_and_save_hubert_features(args.manifest, args.features, args.checkpoint, args.layer)

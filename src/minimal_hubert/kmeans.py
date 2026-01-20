@@ -99,5 +99,11 @@ if __name__ == "__main__":
         help="Where to store temporary concatenated features",
     )
     args = parser.parse_args()
-    kmeans = fit_kmeans(args.root_features, args.n_clusters, seed=args.seed, tmpdir=args.tmpdir)
+    kmeans = fit_kmeans(
+        args.root_features,
+        args.n_clusters,
+        seed=args.seed,
+        subsample=args.subsample,
+        tmpdir=args.tmpdir,
+    )
     joblib.dump(kmeans, args.path_kmeans)
