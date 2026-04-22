@@ -1,9 +1,11 @@
 import math
-import re
-from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import torch
+from huggingface_hub import PyTorchModelHubMixin
+from huggingface_hub.errors import HFValidationError
 from spidr.config import DEFAULT_CONV_LAYER_CONFIG
 from spidr.models.components import (
     ConvLayerBlock,
@@ -11,6 +13,7 @@ from spidr.models.components import (
     FeatureExtractor,
     FeatureProjection,
     FeedForward,
+    LayerNorm,
     SelfAttention,
     Transformer,
     TransformerLayer,
@@ -19,17 +22,93 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 from torch.nn.utils.parametrizations import weight_norm
 
-LOGIT_TEMPERATURE = 0.1
-FEATURE_WEIGHT = 1.0  # Set to 1.0 instead of 10.0 to ~compensate for feature_grad_mult=0.1 in the original code
+from .assets import (
+    _LOGIT_TEMPERATURE,
+    Size,
+    load_hubert_fairseq_state_dict,
+    load_state_dict_pre_hook,
+    size_from_state_dict,
+)
+
+
+@dataclass(frozen=True)
+class HuBERTConfig:
+    size: Size
+    extractor_mode: Literal["layer_norm", "group_norm"]
+    encoder_embed_dim: int
+    encoder_num_layers: int
+    encoder_num_heads: int
+    encoder_ff_interm_features: int
+    encoder_layer_norm_first: bool
+    final_dim: int
+    encoder_projection_dropout: float
+    encoder_attention_dropout: float
+    encoder_ff_interm_dropout: float
+    encoder_dropout: float
+    encoder_layer_drop: float
+
+    @classmethod
+    def from_size(cls, size: Size) -> "HuBERTConfig":
+        match size:
+            case "base":
+                return cls(
+                    size="base",
+                    extractor_mode="group_norm",
+                    encoder_embed_dim=768,
+                    encoder_num_layers=12,
+                    encoder_num_heads=12,
+                    encoder_ff_interm_features=3_072,
+                    encoder_layer_norm_first=False,
+                    final_dim=256,
+                    encoder_projection_dropout=0.1,
+                    encoder_attention_dropout=0.1,
+                    encoder_ff_interm_dropout=0.0,
+                    encoder_dropout=0.1,
+                    encoder_layer_drop=0.05,
+                )
+            case "large":
+                return cls(
+                    size="large",
+                    extractor_mode="layer_norm",
+                    encoder_embed_dim=1_024,
+                    encoder_num_layers=24,
+                    encoder_num_heads=16,
+                    encoder_ff_interm_features=4_096,
+                    encoder_layer_norm_first=True,
+                    final_dim=768,
+                    encoder_projection_dropout=0.0,
+                    encoder_attention_dropout=0.0,
+                    encoder_ff_interm_dropout=0.0,
+                    encoder_dropout=0.0,
+                    encoder_layer_drop=0.0,
+                )
+            case "xlarge":
+                return cls(
+                    size="xlarge",
+                    extractor_mode="layer_norm",
+                    encoder_embed_dim=1_280,
+                    encoder_num_layers=48,
+                    encoder_num_heads=16,
+                    encoder_ff_interm_features=5_120,
+                    encoder_layer_norm_first=True,
+                    final_dim=1_024,
+                    encoder_projection_dropout=0.0,
+                    encoder_attention_dropout=0.0,
+                    encoder_ff_interm_dropout=0.0,
+                    encoder_dropout=0.0,
+                    encoder_layer_drop=0.0,
+                )
+        raise ValueError(f"Invalid size {size}. Must be either 'base', 'large', or 'xlarge'")
 
 
 class LogitGenerator(nn.Module):
-    def __init__(self, encoder_embed_dim: int, num_classes: int, final_dim: int) -> None:
+    def __init__(self, num_classes: int, size: Size = "base") -> None:
         super().__init__()
-        self.label_embeddings = nn.Parameter(torch.FloatTensor(num_classes, final_dim))
+        cfg = HuBERTConfig.from_size(size)
+        self.label_embeddings = nn.Parameter(torch.FloatTensor(num_classes, cfg.final_dim))
         nn.init.uniform_(self.label_embeddings)
-        self.final_proj = nn.Linear(encoder_embed_dim, final_dim)
-        self.logit_temp = nn.Buffer(torch.tensor(LOGIT_TEMPERATURE))
+        self.final_proj = nn.Linear(cfg.encoder_embed_dim, cfg.final_dim)
+        self.logit_temp = nn.Buffer(torch.tensor(_LOGIT_TEMPERATURE))
 
     def forward(self, x: Tensor, label: Tensor) -> Tensor:
         x = self.final_proj(x)
@@ -45,63 +124,56 @@ class LogitGenerator(nn.Module):
         return logits.transpose(0, 1)
 
 
-def hubert_base_components(
-    encoder_projection_dropout: float,
-    encoder_attention_dropout: float,
-    encoder_ff_interm_dropout: float,
-    encoder_dropout: float,
-    encoder_layer_drop: float,
-) -> tuple[FeatureExtractor, nn.Sequential, Transformer, nn.Parameter]:
+def hubert_components(cfg: HuBERTConfig) -> tuple[FeatureExtractor, nn.Sequential, Transformer]:
     blocks, in_channels = nn.ModuleList(), 1
     for i, (out_channels, kernel_size, stride) in enumerate(DEFAULT_CONV_LAYER_CONFIG):
-        norm = nn.GroupNorm(num_groups=out_channels, num_channels=out_channels, affine=True) if i == 0 else None
+        if cfg.extractor_mode == "layer_norm":
+            norm = LayerNorm(normalized_shape=out_channels, elementwise_affine=True)
+        elif cfg.extractor_mode == "group_norm" and i == 0:
+            norm = nn.GroupNorm(num_groups=out_channels, num_channels=out_channels, affine=True)
+        else:
+            norm = None
         blocks.append(ConvLayerBlock(in_channels, out_channels, kernel_size, stride, norm, bias=False))
         in_channels = out_channels
     feature_extractor = FeatureExtractor(blocks)
-    pos_conv = ConvPositionalEmbedding(768, 128, 16, 1)
+    pos_conv = ConvPositionalEmbedding(cfg.encoder_embed_dim, kernel_size=128, groups=16, depth=1)
     pos_conv.convs[0] = weight_norm(pos_conv.convs[0], dim=2)
-    pos_conv.layer_norm = nn.Identity()
+    pos_conv.layer_norm = nn.Identity()  # ty: ignore[invalid-assignment]
     layers = nn.ModuleList()
-    for _ in range(12):
-        attention = SelfAttention(768, 12, qkv_bias=True, dropout=encoder_attention_dropout)
-        feed_forward = FeedForward(768, 3_072, encoder_ff_interm_dropout)
-        layers.append(TransformerLayer(attention, encoder_dropout, feed_forward, layer_norm_first=False))
-    encoder = Transformer(layers, pos_conv, encoder_dropout, encoder_layer_drop, layer_norm_first=True)
-    feature_projection = nn.Sequential(
-        FeatureProjection(DEFAULT_CONV_LAYER_CONFIG[-1][0], 768),
-        nn.Dropout(encoder_projection_dropout),
-    )
-    mask_embedding = nn.Parameter(torch.FloatTensor(768))
-    return feature_extractor, feature_projection, encoder, mask_embedding
-
-
-class HuBERT(nn.Module):
-    def __init__(
-        self,
-        *,
-        encoder_projection_dropout: float = 0.1,
-        encoder_attention_dropout: float = 0.1,
-        encoder_ff_interm_dropout: float = 0.0,
-        encoder_dropout: float = 0.1,
-        encoder_layer_drop: float = 0.05,
-    ) -> None:
-        super().__init__()
-        self.feature_extractor, self.feature_projection, self.encoder, self.mask_embedding = hubert_base_components(
-            encoder_projection_dropout,
-            encoder_attention_dropout,
-            encoder_ff_interm_dropout,
-            encoder_dropout,
-            encoder_layer_drop,
+    for _ in range(cfg.encoder_num_layers):
+        attn = SelfAttention(
+            cfg.encoder_embed_dim, cfg.encoder_num_heads, qkv_bias=True, dropout=cfg.encoder_attention_dropout
         )
+        ff = FeedForward(cfg.encoder_embed_dim, cfg.encoder_ff_interm_features, cfg.encoder_ff_interm_dropout)
+        layers.append(TransformerLayer(attn, cfg.encoder_dropout, ff, layer_norm_first=cfg.encoder_layer_norm_first))
+    encoder = Transformer(
+        layers,
+        pos_conv,
+        cfg.encoder_dropout,
+        cfg.encoder_layer_drop,
+        layer_norm_first=not cfg.encoder_layer_norm_first,
+    )
+    feature_projection = nn.Sequential(
+        FeatureProjection(DEFAULT_CONV_LAYER_CONFIG[-1][0], cfg.encoder_embed_dim),
+        nn.Dropout(cfg.encoder_projection_dropout),
+    )
+    return feature_extractor, feature_projection, encoder
+
+
+class HuBERT(nn.Module, PyTorchModelHubMixin):
+    def __init__(self, size: Size = "base") -> None:
+        super().__init__()
+        self.config = HuBERTConfig.from_size(size)
+        self.feature_extractor, self.feature_projection, self.encoder = hubert_components(self.config)
         self.init_weights_()
+        self.register_load_state_dict_pre_hook(load_state_dict_pre_hook)
 
     def init_weights_(self) -> None:
-        nn.init.uniform_(self.mask_embedding)
         module = self.encoder.pos_conv_embed
         std = math.sqrt(4.0 / (module.embed_dim * module.kernel_size))
         for conv in module.convs:
-            nn.init.normal_(conv.weight, mean=0.0, std=std)
-            nn.init.constant_(conv.bias, 0.0)
+            nn.init.normal_(conv.weight, mean=0.0, std=std)  # ty: ignore[invalid-argument-type]
+            nn.init.constant_(conv.bias, 0.0)  # ty: ignore[invalid-argument-type]
 
     def get_intermediate_outputs(
         self,
@@ -115,47 +187,50 @@ class HuBERT(nn.Module):
         x = self.feature_projection(x)
         return self.encoder.get_intermediate_outputs(x, attention_mask, num_layers, before_residual=before_residual)
 
-    def forward(
-        self, waveforms: Tensor, *, mask: Tensor | None = None, attention_mask: Tensor | None = None
-    ) -> Tensor:
+    def forward(self, waveforms: Tensor, *, attention_mask: Tensor | None = None) -> Tensor:
         x = self.feature_extractor(waveforms)
         x = self.feature_projection(x)
-        if mask is not None:
-            x = torch.where(mask.unsqueeze(-1), self.mask_embedding.to(x.dtype).expand_as(x), x)
-        else:
-            mask = torch.ones((x.shape[0], x.shape[1]), dtype=torch.bool, device=x.device)
         return self.encoder(x, attention_mask)
 
     @classmethod
-    def from_pretrained(cls, path: str | Path) -> "HuBERT":
-        state_dict = torch.load(path, map_location="cpu")
-        if "model" in state_dict:
-            state_dict = state_dict["model"]
-        model = cls()
-        model.load_state_dict(state_dict)
-        return model.eval()
+    def from_pretrained(
+        cls,
+        pretrained_model_name_or_path: str | Path,
+        *,
+        force_download: bool = False,
+        token: str | bool | None = None,
+        cache_dir: str | Path | None = None,
+        local_files_only: bool = False,
+        revision: str | None = None,
+        **model_kwargs: str,
+    ) -> "HuBERT":
+        try:
+            model_kwargs.pop("strict", None)
+            return super().from_pretrained(
+                pretrained_model_name_or_path,
+                force_download=force_download,
+                token=token,
+                cache_dir=cache_dir,
+                local_files_only=local_files_only,
+                revision=revision,
+                strict=True,
+                **model_kwargs,
+            )
+        except HFValidationError:
+            state_dict = load_hubert_fairseq_state_dict(pretrained_model_name_or_path, for_pretraining=False)
+            model = HuBERT(size=size_from_state_dict(state_dict)).eval()
+            model.load_state_dict(state_dict)
+            return model
 
 
 class HuBERTPretrain(HuBERT):
-    def __init__(
-        self,
-        num_classes: int,
-        *,
-        encoder_projection_dropout: float = 0.1,
-        encoder_attention_dropout: float = 0.1,
-        encoder_ff_interm_dropout: float = 0.0,
-        encoder_dropout: float = 0.1,
-        encoder_layer_drop: float = 0.05,
-    ) -> None:
-        super().__init__(
-            encoder_projection_dropout=encoder_projection_dropout,
-            encoder_attention_dropout=encoder_attention_dropout,
-            encoder_ff_interm_dropout=encoder_ff_interm_dropout,
-            encoder_dropout=encoder_dropout,
-            encoder_layer_drop=encoder_layer_drop,
-        )
-        self.feature_weight = nn.Buffer(torch.tensor(FEATURE_WEIGHT))
-        self.logit_generator = LogitGenerator(768, num_classes, 256)
+    def __init__(self, num_classes: int, size: Size = "base") -> None:
+        super().__init__(size)
+        self.num_classes = num_classes
+        self.logit_generator = LogitGenerator(num_classes, size="base")
+        encoder_embed_dim = self.logit_generator.final_proj.in_features
+        self.mask_embedding = nn.Parameter(torch.FloatTensor(encoder_embed_dim))
+        nn.init.uniform_(self.mask_embedding)
 
     def forward(  # ty: ignore[invalid-method-override]
         self,
@@ -175,93 +250,37 @@ class HuBERTPretrain(HuBERT):
         x = self.encoder(x, attention_mask)
         mask_indices = torch.nonzero(mask, as_tuple=True)
         logits = self.logit_generator(x[mask_indices], labels[mask_indices])
-        features_loss = features_pen * self.feature_weight * logits.shape[0]
+        features_loss = features_pen * logits.shape[0]
         logits_loss = -F.log_softmax(logits, dim=1)[:, 0]
         return features_loss + logits_loss, {"feature_loss": features_loss, "logits_loss": logits_loss}
 
     @classmethod
-    def from_pretrained(cls, path: str | Path) -> "HuBERTPretrain":
-        state_dict = torch.load(path, map_location="cpu")
-        if "model" in state_dict:
-            state_dict = state_dict["model"]
-        num_classes = state_dict["logit_generator.label_embeddings"].size(0)
-        model = cls(num_classes)
-        model.load_state_dict(state_dict)
-        return model.eval()
-
-
-def _fix_state_dict_key(key: str) -> str:
-    if key == "masked_spec_embed":
-        return "mask_embedding"
-    key = re.sub(r"^wav2vec2\.", "", key)
-    key = re.sub(r"^mask_generator\.", "", key)
-    key = re.sub(r"^encoder\.transformer\.", "encoder.", key)
-    key = re.sub(r"^feature_projection\.", "feature_projection.0.", key)
-    key = re.sub(r"^encoder\.feature_projection\.", "feature_projection.0.", key)
-    key = re.sub(r"\.out_proj\.", ".proj.", key)
-    return re.sub(r"^encoder\.pos_conv_embed\.conv\.", "encoder.pos_conv_embed.convs.0.", key)
-
-
-def state_dict_from_torchaudio_or_huggingface(state_dict: dict[str, Tensor]) -> dict[str, Tensor]:
-    new_state_dict = {_fix_state_dict_key(k): v for k, v in state_dict.items()}
-    qkv = {"weight": defaultdict(dict), "bias": defaultdict(dict)}
-    for key, tensor in new_state_dict.items():
-        match = re.match(r"^(encoder\.layers\.\d+\.attention)\.(q|k|v)_proj\.(weight|bias)$", key)
-        if match:
-            layer, group, param = match.groups()
-            qkv[param][layer][group] = tensor
-    for weight in ["weight", "bias"]:
-        for layer in qkv[weight]:
-            q, k, v = qkv[weight][layer]["q"], qkv[weight][layer]["k"], qkv[weight][layer]["v"]
-            new_state_dict[f"{layer}.qkv.{weight}"] = torch.cat((q, k, v), dim=0)
-            for group in ["q", "k", "v"]:
-                del new_state_dict[f"{layer}.{group}_proj.{weight}"]
-    if "logit_generator.label_embeddings" in new_state_dict:
-        new_state_dict["feature_weight"] = torch.tensor(FEATURE_WEIGHT)
-        new_state_dict["logit_generator.logit_temp"] = torch.tensor(LOGIT_TEMPERATURE)
-    return new_state_dict
-
-
-def _fix_state_dict_key_s3prl(key: str) -> str:
-    if key == "mask_emb":
-        return "mask_embedding"
-    if key == "label_embs_concat":
-        return "logit_generator.label_embeddings"
-    key = re.sub(r"^wav2vec2\.", "", key)
-    key = re.sub(r"^mask_generator\.", "", key)
-    key = re.sub(r"^encoder\.transformer\.", "encoder.", key)
-    key = re.sub(r"^feature_projection\.", "feature_projection.0.", key)
-    key = re.sub(r"^encoder\.feature_projection\.", "feature_projection.0.", key)
-    key = re.sub(r"\.out_proj\.", ".proj.", key)
-    key = re.sub(r"\.fc1\.", ".feed_forward.intermediate_dense.", key)
-    key = re.sub(r"\.fc2\.", ".feed_forward.output_dense.", key)
-    key = re.sub(r"\.self_attn\.", ".attention.", key)
-    key = re.sub(r"\.self_attn_layer_norm\.", ".layer_norm.", key)
-    key = re.sub(r"(feature_extractor\.conv_layers\.\d+)\.0\.weight", r"\1.conv.weight", key)
-    key = re.sub(r"(feature_extractor\.conv_layers\.\d+)\.2", r"\1.layer_norm", key)
-    key = re.sub(r"^post_extract_proj\.", "feature_projection.0.projection.", key)
-    key = re.sub(r"^layer_norm\.", "feature_projection.0.layer_norm.", key)
-    key = re.sub(r"^final_proj\.", "logit_generator.final_proj.", key)
-    key = re.sub(r"\.weight_g", ".parametrizations.weight.original0", key)
-    key = re.sub(r"\.weight_v", ".parametrizations.weight.original1", key)
-    return re.sub(r"^encoder\.pos_conv\.", "encoder.pos_conv_embed.convs.", key)
-
-
-def state_dict_from_s3prl(state_dict: dict[str, Tensor]) -> dict[str, Tensor]:
-    new_state_dict = {_fix_state_dict_key_s3prl(k): v for k, v in state_dict.items()}
-    qkv = {"weight": defaultdict(dict), "bias": defaultdict(dict)}
-    for key, tensor in new_state_dict.items():
-        match = re.match(r"^(encoder\.layers\.\d+\.attention)\.(q|k|v)_proj\.(weight|bias)$", key)
-        if match:
-            layer, group, param = match.groups()
-            qkv[param][layer][group] = tensor
-    for weight in ["weight", "bias"]:
-        for layer in qkv[weight]:
-            q, k, v = qkv[weight][layer]["q"], qkv[weight][layer]["k"], qkv[weight][layer]["v"]
-            new_state_dict[f"{layer}.qkv.{weight}"] = torch.cat((q, k, v), dim=0)
-            for group in ["q", "k", "v"]:
-                del new_state_dict[f"{layer}.{group}_proj.{weight}"]
-    if "logit_generator.label_embeddings" in new_state_dict:
-        new_state_dict["feature_weight"] = torch.tensor(FEATURE_WEIGHT)
-        new_state_dict["logit_generator.logit_temp"] = torch.tensor(LOGIT_TEMPERATURE)
-    return new_state_dict
+    def from_pretrained(
+        cls,
+        pretrained_model_name_or_path: str | Path,
+        *,
+        force_download: bool = False,
+        token: str | bool | None = None,
+        cache_dir: str | Path | None = None,
+        local_files_only: bool = False,
+        revision: str | None = None,
+        **model_kwargs: str,
+    ) -> "HuBERTPretrain":
+        try:
+            model_kwargs.pop("strict", None)
+            return super(HuBERT, cls).from_pretrained(
+                pretrained_model_name_or_path,
+                force_download=force_download,
+                token=token,
+                cache_dir=cache_dir,
+                local_files_only=local_files_only,
+                revision=revision,
+                strict=True,
+                **model_kwargs,
+            )
+        except HFValidationError:
+            state_dict = load_hubert_fairseq_state_dict(pretrained_model_name_or_path, for_pretraining=True)
+            num_classes = state_dict["logit_generator.label_embeddings"].size(0)
+            model = HuBERTPretrain(num_classes, size=size_from_state_dict(state_dict)).eval()
+            model.load_state_dict(state_dict)
+            return model

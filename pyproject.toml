@@ -8,7 +8,9 @@ authors = [{ name = "Maxime Poli" }]
 dependencies = [
   "fastabx>=0.6.1",
   "filelock>=3.20.2",
+  "huggingface-hub>=1.11.0",
   "orjson>=3.11.5",
+  "safetensors>=0.7.0",
   "scikit-learn>=1.8.0",
   "spidr[train]>=0.1.3",
   "torch>=2.9.1",
