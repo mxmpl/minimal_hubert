@@ -112,8 +112,8 @@ sbatch slurm/transcribe.slurm $ROOT_VAL_MFCC $PATH_KMEANS_IT1 $UNITS_JSONL_IT1
 Then merge your manifests with the resulting JSONL to have manifests with units, ready for pretraining:
 
 ```bash
-python -m minimal_hubert.utils.merge_manifest_with_units $PATH_TRAIN_MANIFEST $UNITS_JSONL_IT1 $PATH_TRAIN_MANIFEST_WITH_UNITS_IT1 --from-mfcc
-python -m minimal_hubert.utils.merge_manifest_with_units $PATH_VAL_MANIFEST $UNITS_JSONL_IT1 $PATH_VAL_MANIFEST_WITH_UNITS_IT1 --from-mfcc
+python -m minimal_hubert.utils $PATH_TRAIN_MANIFEST $UNITS_JSONL_IT1 $PATH_TRAIN_MANIFEST_WITH_UNITS_IT1 --from-mfcc
+python -m minimal_hubert.utils $PATH_VAL_MANIFEST $UNITS_JSONL_IT1 $PATH_VAL_MANIFEST_WITH_UNITS_IT1 --from-mfcc
 ```
 
 This may use a lot of memory, so run this on a compute node.
@@ -131,16 +131,10 @@ Adapt the arguments to your specific cluster. This will take ~10 hours if you ha
 
 #### Select the best checkpoint
 
-Compute the validation loss for all intermediate checkpoints:
+Compute the validation loss for all intermediate checkpoints, find the best checkpoint and create a symlink:
 
 ```bash
 sbatch scripts/validate.slurm $PATH_VAL_MANIFEST_WITH_UNITS_IT1 $PATH_CHECKPOINTS_IT1 $VALIDATION_JSONL_IT1
-```
-
-Find the best checkpoint and create a symlink:
-
-```bash
-python -m minimal_hubert.utils.best_checkpoint $PATH_CHECKPOINTS_IT1 $VALIDATION_JSONL_IT1
 ```
 
 ### Second iteration
@@ -184,8 +178,8 @@ sbatch scripts/transcribe.slurm $ROOT_VAL_FEATURES $UNITS_JSONL_IT2 $PATH_KMEANS
 ```
 
 ```bash
-python -m minimal_hubert.utils.merge_manifest_with_units $PATH_TRAIN_MANIFEST $UNITS_JSONL_IT2 $PATH_TRAIN_MANIFEST_WITH_UNITS_IT2
-python -m minimal_hubert.utils.merge_manifest_with_units $PATH_VAL_MANIFEST $UNITS_JSONL_IT2 $PATH_VAL_MANIFEST_WITH_UNITS_IT2
+python -m minimal_hubert.utils $PATH_TRAIN_MANIFEST $UNITS_JSONL_IT2 $PATH_TRAIN_MANIFEST_WITH_UNITS_IT2
+python -m minimal_hubert.utils $PATH_VAL_MANIFEST $UNITS_JSONL_IT2 $PATH_VAL_MANIFEST_WITH_UNITS_IT2
 ```
 
 #### Second pretraining iteration
@@ -201,10 +195,6 @@ python -m minimal_hubert ./configs/it2.toml -N 4 -G 4 -c 24 -t 1200 -C h100
 
 ```bash
 sbatch scripts/validate.slurm $PATH_VAL_MANIFEST_WITH_UNITS_IT2 $PATH_CHECKPOINTS_IT2 $VALIDATION_JSONL_IT2
-```
-
-```bash
-python -m minimal_hubert.utils.best_checkpoint $PATH_CHECKPOINTS_IT2 $VALIDATION_JSONL_IT2
 ```
 
 ## Citation
