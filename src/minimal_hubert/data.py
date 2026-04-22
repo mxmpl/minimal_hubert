@@ -20,14 +20,14 @@ from torch.utils.data import DataLoader
 
 
 class SpeechDatasetWithLabelsFromArchive(SpeechDatasetFromArchive):
-    def __getitem__(self, index: int) -> tuple[Tensor, Tensor]:
+    def __getitem__(self, index: int) -> tuple[Tensor, Tensor]:  # ty: ignore[invalid-method-override]
         waveform = super().__getitem__(index)
         labels = self.manifest[index, "units"]
         return waveform, torch.tensor(labels)
 
 
 class SpeechDatasetWithLabelsFromFiles(SpeechDatasetFromFiles):
-    def __getitem__(self, index: int) -> tuple[Tensor, Tensor]:
+    def __getitem__(self, index: int) -> tuple[Tensor, Tensor]:  # ty: ignore[invalid-method-override]
         waveform = super().__getitem__(index)
         labels = self.manifest[index, "units"]
         return waveform, torch.tensor(labels)
@@ -69,15 +69,15 @@ def crop_audio_and_labels(
 
 
 class SpeechWithLabelsCollatorWithMasking(SpeechCollatorWithMasking):
-    def __call__(self, batch: list[tuple[Tensor, Tensor]]) -> tuple[Tensor, Tensor, Tensor, Tensor | None]:
+    def __call__(self, batch: list[tuple[Tensor, Tensor]]) -> tuple[Tensor, Tensor, Tensor, Tensor | None]:  # ty: ignore[invalid-method-override]
         num_samples = max(len(wav) for wav, _ in batch) if self.enable_padding else min(len(wav) for wav, _ in batch)
         wavs_labels_len = [
             crop_audio_and_labels(wav, label, num_samples, self.max_sample_size, rand_crop=self.rand_crop)
             for wav, label in batch
         ]
         wav_list, label_list, wav_lengths = zip(*wavs_labels_len, strict=True)
-        wavs = pad_sequence(wav_list, batch_first=True)
-        labels = pad_sequence(label_list, batch_first=True, padding_value=-1)
+        wavs = pad_sequence(list(wav_list), batch_first=True)
+        labels = pad_sequence(list(label_list), batch_first=True, padding_value=-1)
         lengths = conv_length(self.conv_layer_config, torch.tensor(wav_lengths))
         batch_size, max_len = wavs.size(0), int(lengths.max())
         padding_mask = torch.arange(max_len, device=lengths.device).expand(batch_size, max_len) >= lengths[:, None]

@@ -36,7 +36,7 @@ class LinearDecayLRScheduler(LRScheduler):
         self.max_updates = max_updates
         super().__init__(optimizer)
 
-    def get_lr(self) -> list[float]:
+    def get_lr(self) -> list[float | torch.Tensor]:
         if self._step_count <= self.warmup_updates:
             return [self._step_count / self.warmup_updates * base_lr for base_lr in self.base_lrs]
         if self._step_count >= self.max_updates:
@@ -53,7 +53,7 @@ def train(cfg: Config) -> None:
         global_rank, world_size = dist.get_rank(), dist.get_world_size()
         is_main = global_rank == 0
         if is_main:
-            init_wandb(cfg)
+            init_wandb(cfg)  # ty: ignore[invalid-argument-type]
             stack.callback(wandb.finish)
 
         logger.info("Building model, optimizer, and dataloaders")
@@ -90,7 +90,7 @@ def train(cfg: Config) -> None:
         pbar = stack.enter_context(tqdm(total=cfg.optimizer.max_steps, initial=step, disable=not is_main))
         while step < cfg.optimizer.max_steps:
             epoch += 1
-            loader.batch_sampler.set_epoch(epoch)
+            loader.batch_sampler.set_epoch(epoch)  # ty: ignore[unresolved-attribute]
             logger.info("Starting epoch %s", epoch)
             for waveforms, labels, attn_mask, mask in loader:
                 if step >= cfg.optimizer.max_steps:

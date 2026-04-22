@@ -26,7 +26,7 @@ def build_mmap_features(
 ) -> np.ndarray:
     files = sorted(Path(root).rglob("*.pt"))
     rng = np.random.default_rng(seed=seed)
-    files = rng.choice(files, len(files) // subsample)
+    files = rng.choice(files, len(files) // subsample)  # ty: ignore[no-matching-overload]
     rows = 0
     for path in tqdm(files, "Infer concatenated features shape"):
         shape = torch.load(path, map_location="cpu", mmap=True).shape

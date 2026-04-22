@@ -1,7 +1,5 @@
 import math
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 import torch
 from huggingface_hub import PyTorchModelHubMixin
@@ -29,76 +27,7 @@ from .assets import (
     load_state_dict_pre_hook,
     size_from_state_dict,
 )
-
-
-@dataclass(frozen=True)
-class HuBERTConfig:
-    size: Size
-    extractor_mode: Literal["layer_norm", "group_norm"]
-    encoder_embed_dim: int
-    encoder_num_layers: int
-    encoder_num_heads: int
-    encoder_ff_interm_features: int
-    encoder_layer_norm_first: bool
-    final_dim: int
-    encoder_projection_dropout: float
-    encoder_attention_dropout: float
-    encoder_ff_interm_dropout: float
-    encoder_dropout: float
-    encoder_layer_drop: float
-
-    @classmethod
-    def from_size(cls, size: Size) -> "HuBERTConfig":
-        match size:
-            case "base":
-                return cls(
-                    size="base",
-                    extractor_mode="group_norm",
-                    encoder_embed_dim=768,
-                    encoder_num_layers=12,
-                    encoder_num_heads=12,
-                    encoder_ff_interm_features=3_072,
-                    encoder_layer_norm_first=False,
-                    final_dim=256,
-                    encoder_projection_dropout=0.1,
-                    encoder_attention_dropout=0.1,
-                    encoder_ff_interm_dropout=0.0,
-                    encoder_dropout=0.1,
-                    encoder_layer_drop=0.05,
-                )
-            case "large":
-                return cls(
-                    size="large",
-                    extractor_mode="layer_norm",
-                    encoder_embed_dim=1_024,
-                    encoder_num_layers=24,
-                    encoder_num_heads=16,
-                    encoder_ff_interm_features=4_096,
-                    encoder_layer_norm_first=True,
-                    final_dim=768,
-                    encoder_projection_dropout=0.0,
-                    encoder_attention_dropout=0.0,
-                    encoder_ff_interm_dropout=0.0,
-                    encoder_dropout=0.0,
-                    encoder_layer_drop=0.0,
-                )
-            case "xlarge":
-                return cls(
-                    size="xlarge",
-                    extractor_mode="layer_norm",
-                    encoder_embed_dim=1_280,
-                    encoder_num_layers=48,
-                    encoder_num_heads=16,
-                    encoder_ff_interm_features=5_120,
-                    encoder_layer_norm_first=True,
-                    final_dim=1_024,
-                    encoder_projection_dropout=0.0,
-                    encoder_attention_dropout=0.0,
-                    encoder_ff_interm_dropout=0.0,
-                    encoder_dropout=0.0,
-                    encoder_layer_drop=0.0,
-                )
-        raise ValueError(f"Invalid size {size}. Must be either 'base', 'large', or 'xlarge'")
+from .config import HuBERTConfig
 
 
 class LogitGenerator(nn.Module):
@@ -227,7 +156,7 @@ class HuBERTPretrain(HuBERT):
     def __init__(self, num_classes: int, size: Size = "base") -> None:
         super().__init__(size)
         self.num_classes = num_classes
-        self.logit_generator = LogitGenerator(num_classes, size="base")
+        self.logit_generator = LogitGenerator(num_classes, size=size)
         encoder_embed_dim = self.logit_generator.final_proj.in_features
         self.mask_embedding = nn.Parameter(torch.FloatTensor(encoder_embed_dim))
         nn.init.uniform_(self.mask_embedding)

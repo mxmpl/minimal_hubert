@@ -1,6 +1,6 @@
 num_classes = 500
-manifest = ""
-workdir = ""
+manifest = "/path/to/manifest.jsonl"
+workdir = "/path/to/workdir"
 wandb_project = "minimal-hubert"
 wandb_name = "it2"
 wandb_mode = "offline"

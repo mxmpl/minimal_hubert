@@ -6,7 +6,7 @@ from filelock import FileLock
 from sklearn.cluster import MiniBatchKMeans
 from tqdm import tqdm
 
-from .features import split_for_distributed
+from .utils import split_for_distributed
 
 
 def transcribe(root: str | Path, kmeans: MiniBatchKMeans, jsonl: str | Path) -> None:

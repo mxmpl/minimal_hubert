@@ -161,3 +161,31 @@ def size_from_state_dict(state_dict: dict[str, Tensor]) -> Size:
     if layers == set(range(48)):
         return "xlarge"
     raise ValueError
+
+
+def known_huberts() -> dict[Size, list[str]]:
+    return {
+        "base": [
+            "facebook/hubert-base-ls960",
+            "https://dl.fbaipublicfiles.com/hubert/hubert_base_ls960.pt",
+            "https://dl.fbaipublicfiles.com/hubert/mhubert_base_vp_en_es_fr_it3.pt",
+            "https://dl.fbaipublicfiles.com/hubert/mhubert_base_vp_mls_cv_8lang_it3.pt",
+            "utter-project/mHuBERT-147",
+            "utter-project/mHuBERT-147-base-1st-iter",
+            "utter-project/mHuBERT-147-base-2nd-iter",
+            "reazon-research/japanese-hubert-base-k2",
+            "TencentGameMate/chinese-hubert-base",
+            "coml/hubert-base-vp20",
+            "coml/hubert-base-mmsulab",
+            "https://huggingface.co/espnet/espnet_cvhubert/blob/main/exp/hubert_iter2_train_ssl_torchaudiohubert_base_960h_pretrain_it2_raw/latest.pth",
+        ],
+        "large": [
+            "facebook/hubert-large-ll60k",
+            "TencentGameMate/chinese-hubert-large",
+            "https://dl.fbaipublicfiles.com/hubert/hubert_large_ll60k.pt",
+        ],
+        "xlarge": [
+            "facebook/hubert-xlarge-ll60k",
+            "https://dl.fbaipublicfiles.com/hubert/hubert_xtralarge_ll60k.pt",
+        ],
+    }
