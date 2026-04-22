@@ -18,7 +18,7 @@ type Size = Literal["base", "large", "xlarge"]
 
 
 # ruff: disable[ARG001, FBT001]
-def load_state_dict_pre_hook(
+def load_state_dict_pre_hook_compatibility_frameworks(
     module: nn.Module,
     state_dict: OrderedDict,
     prefix: str,
@@ -34,6 +34,27 @@ def load_state_dict_pre_hook(
     state_dict.update(new_sd)
 
 
+def load_state_dict_pre_hook_strip_pt_specifics(
+    module: nn.Module,
+    state_dict: OrderedDict,
+    prefix: str,
+    local_metadata: dict,
+    strict: bool,
+    missing_keys: list[str],
+    unexpected_keys: list[str],
+    error_msgs: list,
+) -> None:
+    print("NOOOO")
+    for key in [
+        "mask_embedding",
+        "logit_generator.label_embeddings",
+        "logit_generator.logit_temp",
+        "logit_generator.final_proj.weight",
+        "logit_generator.final_proj.bias",
+    ]:
+        state_dict.pop(key, None)
+
+
 # ruff: enable[ARG001, FBT001]
 
 
@@ -43,8 +64,8 @@ def _fix_state_dict_key(key: str) -> str:
     key = re.sub(r"^wav2vec2\.", "", key)
     key = re.sub(r"^mask_generator\.", "", key)
     key = re.sub(r"^encoder\.transformer\.", "encoder.", key)
-    key = re.sub(r"^feature_projection\.", "feature_projection.0.", key)
-    key = re.sub(r"^encoder\.feature_projection\.", "feature_projection.0.", key)
+    # key = re.sub(r"^feature_projection\.", "feature_projection.0.", key)
+    # key = re.sub(r"^encoder\.feature_projection\.", "feature_projection.0.", key)
     key = re.sub(r"\.out_proj\.", ".proj.", key)
     return re.sub(r"^encoder\.pos_conv_embed\.conv\.", "encoder.pos_conv_embed.convs.0.", key)
 
@@ -65,8 +86,8 @@ def state_dict_from_torchaudio_or_huggingface(state_dict: dict[str, Tensor]) -> 
                 del new_state_dict[f"{layer}.{group}_proj.{weight}"]
     if "logit_generator.label_embeddings" in new_state_dict:
         new_state_dict["logit_generator.logit_temp"] = torch.tensor(_LOGIT_TEMPERATURE)
-    if "mask_embedding" in new_state_dict:
-        new_state_dict.pop("mask_embedding")
+    if "feature_weight" in new_state_dict:
+        assert new_state_dict.pop("feature_weight").item() == 1.0
     return new_state_dict
 
 
@@ -160,7 +181,7 @@ def size_from_state_dict(state_dict: dict[str, Tensor]) -> Size:
         return "large"
     if layers == set(range(48)):
         return "xlarge"
-    raise ValueError
+    raise ValueError(f"Invalid model size configuration. We found those layers: {layers}")
 
 
 def known_huberts() -> dict[Size, list[str]]:

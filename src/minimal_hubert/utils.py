@@ -72,12 +72,11 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("path-manifest", help="Path to manifest file")
+    parser.add_argument("manifest", help="Path to manifest file")
     parser.add_argument("units", help="Path to the JSONL file with units")
     parser.add_argument("output", help="Path to the output manifest file with units")
     parser.add_argument(
         "--from-mfcc",
-        type=bool,
         action="store_true",
         help="Add this flag if units are derived from MFCC (10ms instead of 20ms)",
     )

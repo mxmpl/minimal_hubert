@@ -56,11 +56,8 @@ def crop_audio_and_labels(
         frame_offset = int(torch.randint(length - num_samples, size=(1,)))
     elif length < num_samples:
         num_samples = length
-    # label_offset = max(conv_length(DEFAULT_CONV_LAYER_CONFIG, frame_offset), 0)
-    # num_label = conv_length(DEFAULT_CONV_LAYER_CONFIG, num_samples)
-    kernel_size, stride, sample_rate = 25, 20, 16
-    label_offset = max(math.floor((frame_offset - kernel_size * sample_rate) / (stride * sample_rate)) + 1, 0)
-    num_label = math.floor((num_samples - kernel_size * sample_rate) / (stride * sample_rate)) + 1
+    label_offset = max(conv_length(DEFAULT_CONV_LAYER_CONFIG, torch.tensor(frame_offset)), 0)
+    num_label = conv_length(DEFAULT_CONV_LAYER_CONFIG, torch.tensor(num_samples))
     return (
         waveform[frame_offset : frame_offset + num_samples],
         label[label_offset : label_offset + num_label],

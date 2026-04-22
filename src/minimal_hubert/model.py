@@ -24,7 +24,8 @@ from .compatibility import (
     _LOGIT_TEMPERATURE,
     Size,
     load_hubert_fairseq_state_dict,
-    load_state_dict_pre_hook,
+    load_state_dict_pre_hook_compatibility_frameworks,
+    load_state_dict_pre_hook_strip_pt_specifics,
     size_from_state_dict,
 )
 from .config import HuBERTConfig
@@ -95,7 +96,8 @@ class HuBERT(nn.Module, PyTorchModelHubMixin):
         self.config = HuBERTConfig.from_size(size)
         self.feature_extractor, self.feature_projection, self.encoder = hubert_components(self.config)
         self.init_weights_()
-        self.register_load_state_dict_pre_hook(load_state_dict_pre_hook)
+        self._hook_compat = self.register_load_state_dict_pre_hook(load_state_dict_pre_hook_compatibility_frameworks)
+        self._hook_strip_pt = self.register_load_state_dict_pre_hook(load_state_dict_pre_hook_strip_pt_specifics)
 
     def init_weights_(self) -> None:
         module = self.encoder.pos_conv_embed
@@ -155,6 +157,7 @@ class HuBERT(nn.Module, PyTorchModelHubMixin):
 class HuBERTPretrain(HuBERT):
     def __init__(self, num_classes: int, size: Size = "base") -> None:
         super().__init__(size)
+        self._hook_strip_pt.remove()
         self.num_classes = num_classes
         self.logit_generator = LogitGenerator(num_classes, size=size)
         encoder_embed_dim = self.logit_generator.final_proj.in_features
@@ -197,7 +200,7 @@ class HuBERTPretrain(HuBERT):
     ) -> "HuBERTPretrain":
         try:
             model_kwargs.pop("strict", None)
-            return super(HuBERT, cls).from_pretrained(
+            return super(HuBERT, cls).from_pretrained(  # Skip HuBERT.from_pretrained
                 pretrained_model_name_or_path,
                 force_download=force_download,
                 token=token,

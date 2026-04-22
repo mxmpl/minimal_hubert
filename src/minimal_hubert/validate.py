@@ -11,13 +11,13 @@ from torch.utils.data import DataLoader
 
 from .config import hubert_data_config
 from .data import build_dataloader_with_labels
-from .model import HuBERT
+from .model import HuBERTPretrain
 
 logger = logging.getLogger()
 
 
 @torch.no_grad()
-def validate(model: HuBERT, loader: DataLoader, device: torch.device, dtype: torch.dtype) -> dict[str, float]:
+def validate(model: HuBERTPretrain, loader: DataLoader, device: torch.device, dtype: torch.dtype) -> dict[str, float]:
     model.eval()
     total_loss = torch.zeros(1, device=device)
     total_feature_loss = torch.zeros(1, device=device)
@@ -45,7 +45,7 @@ def validate_all_checkpoints(manifest: str, checkpoints: str | Path, output: str
     device, dtype = torch.device("cuda"), torch.bfloat16
     loader = build_dataloader_with_labels(hubert_data_config(manifest), MaskingConfig())
     for path in sorted(Path(checkpoints).glob("*.pt")):
-        model = HuBERT.from_pretrained(path).to(device)
+        model = HuBERTPretrain.from_pretrained(path).to(device)
         losses = validate(model, loader, device, dtype)
         with Path(output).open("ab") as f:
             f.write(orjson.dumps({"name": path.stem} | losses, option=orjson.OPT_APPEND_NEWLINE))
