@@ -1,4 +1,5 @@
 import math
+from collections import OrderedDict
 from pathlib import Path
 
 import torch
@@ -20,15 +21,28 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 from torch.nn.utils.parametrizations import weight_norm
 
-from .compatibility import (
-    _LOGIT_TEMPERATURE,
-    Size,
-    load_hubert_fairseq_state_dict,
-    load_state_dict_pre_hook_compatibility_frameworks,
-    load_state_dict_pre_hook_strip_pt_specifics,
-    size_from_state_dict,
-)
+from .compatibility import _LOGIT_TEMPERATURE, Size, convert_hubert_state_dict, load_state_dict_from_remote_or_local
 from .config import HuBERTConfig
+
+
+# ruff: disable[ARG001, FBT001]
+def load_state_dict_pre_hook(
+    module: nn.Module,
+    state_dict: OrderedDict,
+    prefix: str,
+    local_metadata: dict,
+    strict: bool,
+    missing_keys: list[str],
+    unexpected_keys: list[str],
+    error_msgs: list,
+) -> None:
+    sd = state_dict.get("model", state_dict)
+    new_sd = convert_hubert_state_dict(sd, for_pretraining=isinstance(module, HuBERTPretrain))[0]
+    state_dict.clear()
+    state_dict.update(new_sd)
+
+
+# ruff: enable[ARG001, FBT001]
 
 
 class LogitGenerator(nn.Module):
@@ -96,8 +110,7 @@ class HuBERT(nn.Module, PyTorchModelHubMixin):
         self.config = HuBERTConfig.from_size(size)
         self.feature_extractor, self.feature_projection, self.encoder = hubert_components(self.config)
         self.init_weights_()
-        self._hook_compat = self.register_load_state_dict_pre_hook(load_state_dict_pre_hook_compatibility_frameworks)
-        self._hook_strip_pt = self.register_load_state_dict_pre_hook(load_state_dict_pre_hook_strip_pt_specifics)
+        self.register_load_state_dict_pre_hook(load_state_dict_pre_hook)
 
     def init_weights_(self) -> None:
         module = self.encoder.pos_conv_embed
@@ -148,8 +161,9 @@ class HuBERT(nn.Module, PyTorchModelHubMixin):
                 **model_kwargs,
             )
         except HFValidationError:
-            state_dict = load_hubert_fairseq_state_dict(pretrained_model_name_or_path, for_pretraining=False)
-            model = HuBERT(size=size_from_state_dict(state_dict)).eval()
+            state_dict = load_state_dict_from_remote_or_local(pretrained_model_name_or_path)
+            state_dict, size = convert_hubert_state_dict(state_dict, for_pretraining=False)
+            model = HuBERT(size=size).eval()
             model.load_state_dict(state_dict)
             return model
 
@@ -157,7 +171,6 @@ class HuBERT(nn.Module, PyTorchModelHubMixin):
 class HuBERTPretrain(HuBERT):
     def __init__(self, num_classes: int, size: Size = "base") -> None:
         super().__init__(size)
-        self._hook_strip_pt.remove()
         self.num_classes = num_classes
         self.logit_generator = LogitGenerator(num_classes, size=size)
         encoder_embed_dim = self.logit_generator.final_proj.in_features
@@ -200,7 +213,8 @@ class HuBERTPretrain(HuBERT):
     ) -> "HuBERTPretrain":
         try:
             model_kwargs.pop("strict", None)
-            return super(HuBERT, cls).from_pretrained(  # Skip HuBERT.from_pretrained
+            # Skip HuBERT.from_pretrained to avoid going into the non-HF branch if needed
+            return super(HuBERT, cls).from_pretrained(
                 pretrained_model_name_or_path,
                 force_download=force_download,
                 token=token,
@@ -211,8 +225,8 @@ class HuBERTPretrain(HuBERT):
                 **model_kwargs,
             )
         except HFValidationError:
-            state_dict = load_hubert_fairseq_state_dict(pretrained_model_name_or_path, for_pretraining=True)
-            num_classes = state_dict["logit_generator.label_embeddings"].size(0)
-            model = HuBERTPretrain(num_classes, size=size_from_state_dict(state_dict)).eval()
+            state_dict = load_state_dict_from_remote_or_local(pretrained_model_name_or_path)
+            state_dict, num_classes, size = convert_hubert_state_dict(state_dict, for_pretraining=True)
+            model = HuBERTPretrain(num_classes, size=size).eval()
             model.load_state_dict(state_dict)
             return model
