@@ -5,7 +5,7 @@ from typing import Literal
 
 from spidr.config import DataConfig, MaskingConfig, OptimizerConfig, RunConfig
 
-from .assets import Size
+from .compatibility import Size
 
 
 @dataclass(frozen=True)

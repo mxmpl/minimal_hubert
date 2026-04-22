@@ -20,7 +20,7 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 from torch.nn.utils.parametrizations import weight_norm
 
-from .assets import (
+from .compatibility import (
     _LOGIT_TEMPERATURE,
     Size,
     load_hubert_fairseq_state_dict,
