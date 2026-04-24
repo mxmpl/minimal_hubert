@@ -58,7 +58,10 @@ def _to_target_format(state_dict: dict[str, Tensor], *, for_pretraining: bool) -
             new_state_dict["mask_emb"] = state_dict["mask_emb"]
             new_state_dict["final_proj.weight"] = state_dict["final_proj.weight"]
             new_state_dict["final_proj.bias"] = state_dict["final_proj.bias"]
-            new_state_dict["label_embs_concat"] = new_state_dict["label_embs_concat"][:-4]
+            if new_state_dict["label_embs_concat"].size(0) % 100 == 4:  # fairseq checkpoint
+                new_state_dict["label_embs_concat"] = new_state_dict["label_embs_concat"][:-4]
+            else:
+                new_state_dict["label_embs_concat"] = new_state_dict["label_embs_concat"]
         else:
             new_state_dict.pop("label_embs_concat", None)
     else:
@@ -80,10 +83,8 @@ def _to_target_format(state_dict: dict[str, Tensor], *, for_pretraining: bool) -
 
     if "logit_generator.label_embeddings" in new_state_dict:
         new_state_dict["logit_generator.logit_temp"] = torch.tensor(_LOGIT_TEMPERATURE)
-    if "feature_weight" in new_state_dict:
-        assert new_state_dict.pop("feature_weight").item() == 1.0
-    if not for_pretraining and "mask_embedding" in new_state_dict:
-        new_state_dict.pop("mask_embedding")
+    if not for_pretraining:
+        new_state_dict.pop("mask_embedding", None)
     return new_state_dict
 
 

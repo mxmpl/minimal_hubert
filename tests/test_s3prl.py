@@ -1,9 +1,11 @@
 import pytest
 import torch
+from hypothesis import given
 from s3prl.upstream.hubert.hubert_model import HubertConfig, HubertModel, HubertPretrainingConfig
 
-from minimal_hubert import HuBERTPretrain as MyHuBERT
-from minimal_hubert.model import state_dict_from_s3prl
+from minimal_hubert import HuBERTPretrain
+
+from .conftest import hypothesis_settings, waveforms
 
 
 @pytest.fixture(scope="module")
@@ -18,15 +20,22 @@ def s3prl_hubert(num_classes: int, device: torch.device) -> HubertModel:
 
 
 @pytest.fixture(scope="module")
-def my_hubert(s3prl_hubert: HubertModel, num_classes: int, device: torch.device) -> MyHuBERT:
-    model = MyHuBERT(num_classes).eval().to(device)
-    model.load_state_dict(state_dict_from_s3prl(s3prl_hubert.state_dict()))
+def my_hubert(s3prl_hubert: HubertModel, num_classes: int, device: torch.device) -> HuBERTPretrain:
+    model = HuBERTPretrain(num_classes).eval().to(device)
+    model.load_state_dict(s3prl_hubert.state_dict())
     return model
 
 
 @pytest.mark.filterwarnings("ignore::FutureWarning")
-@torch.no_grad
-def test_s3prl_encoder_intermediate(my_hubert: MyHuBERT, s3prl_hubert: HubertModel, waveforms: torch.Tensor) -> None:
+@given(waveforms=waveforms())
+@hypothesis_settings
+def test_s3prl_encoder_intermediate(
+    my_hubert: HuBERTPretrain,
+    s3prl_hubert: HubertModel,
+    device: torch.device,
+    waveforms: torch.Tensor,
+) -> None:
+    waveforms = waveforms.to(device)
     y = my_hubert.get_intermediate_outputs(waveforms, before_residual=False)
     for layer, yi in enumerate(y):
         xi = s3prl_hubert.extract_features(waveforms, output_layer=layer + 1)[0]
