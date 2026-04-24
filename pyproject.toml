@@ -23,9 +23,7 @@ dynamic = ["version"]
 [dependency-groups]
 dev = [
   "ipykernel>=7.1.0",
-  "ruff>=0.14.10",
-  "tombi>=0.7.16",
-  "typos>=1.42.0",
+  "prek>=0.3.10",
 ]
 test = [
   "hypothesis>=6.150.0",
