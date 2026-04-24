@@ -45,7 +45,7 @@ class LinearDecayLRScheduler(LRScheduler):
         return [base_lr * pct_remaining for base_lr in self.base_lrs]
 
 
-def train(cfg: Config) -> None:
+def train(cfg: Config) -> None:  # noqa: PLR0914
     with ExitStack() as stack:
         logger.info("Starting job")
         setup_training(cfg.run.random_seed, use_deterministic=cfg.run.use_deterministic)

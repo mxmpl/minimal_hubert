@@ -13,7 +13,7 @@ import torch
 from torch import Tensor
 from torch.hub import load_state_dict_from_url
 from torch.nn.modules.utils import consume_prefix_in_state_dict_if_present
-from torchaudio.models.wav2vec2.utils.import_fairseq import _convert_state_dict
+from torchaudio.models.wav2vec2.utils.import_fairseq import _convert_state_dict  # noqa: PLC2701
 
 _LOGIT_TEMPERATURE = 0.1
 
@@ -60,8 +60,6 @@ def _to_target_format(state_dict: dict[str, Tensor], *, for_pretraining: bool) -
             new_state_dict["final_proj.bias"] = state_dict["final_proj.bias"]
             if new_state_dict["label_embs_concat"].size(0) % 100 == 4:  # fairseq checkpoint
                 new_state_dict["label_embs_concat"] = new_state_dict["label_embs_concat"][:-4]
-            else:
-                new_state_dict["label_embs_concat"] = new_state_dict["label_embs_concat"]
         else:
             new_state_dict.pop("label_embs_concat", None)
     else:
@@ -82,7 +80,7 @@ def _to_target_format(state_dict: dict[str, Tensor], *, for_pretraining: bool) -
             del new_state_dict[f"{layer}.v_proj.{param}"]
 
     if "feature_weight" in new_state_dict:
-        assert new_state_dict.pop("feature_weight").item() == 1.0
+        assert new_state_dict.pop("feature_weight").eq(1.0), "Unexpected feature_weight value"
     if "logit_generator.label_embeddings" in new_state_dict:
         new_state_dict["logit_generator.logit_temp"] = torch.tensor(_LOGIT_TEMPERATURE)
     if not for_pretraining:

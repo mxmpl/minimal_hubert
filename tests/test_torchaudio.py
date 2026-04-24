@@ -61,18 +61,19 @@ def test_torchaudio_encoder_intermediate(
         torch.testing.assert_close(xi, yi)
 
 
+def get_mask(shape: tuple[int, ...]) -> Tensor:
+    torch.manual_seed(0)
+    proba = 0.5
+    return torch.randn(shape, dtype=torch.float32) > proba
+
+
 class DummyMaskGenerator(nn.Module):
     def __init__(self, embedding: nn.Parameter) -> None:
         super().__init__()
         self.mask_embedding = embedding
 
-    def get_mask(self, shape: tuple[int, ...]) -> Tensor:
-        torch.manual_seed(0)
-        proba = 0.5
-        return torch.randn(shape, dtype=torch.float32) > proba
-
     def forward(self, x: Tensor, _: Tensor | None = None) -> tuple[Tensor, Tensor | None]:
-        mask = self.get_mask((x.size(0), x.size(1))).to(x.device)
+        mask = get_mask((x.size(0), x.size(1))).to(x.device)
         x[mask] = self.mask_embedding.to(x.dtype)
         return x, mask
 
@@ -109,11 +110,10 @@ def test_torchaudio_loss(
 ) -> None:
     waveforms = waveforms.to(device)
     torchaudio_copy = deepcopy(torchaudio_hubert)
-    mask_generator = DummyMaskGenerator(torchaudio_copy.mask_generator.mask_embedding)
-    torchaudio_copy.mask_generator = mask_generator
+    torchaudio_copy.mask_generator = DummyMaskGenerator(torchaudio_copy.mask_generator.mask_embedding)
     shape = (waveforms.size(0), my_hubert.feature_extractor(waveforms).shape[1])
     labels = torch.randint(0, num_classes, shape, device=waveforms.device)
-    mask = mask_generator.get_mask(shape).to(waveforms.device)
+    mask = get_mask(shape).to(waveforms.device)
     x = torchaudio_hubert_loss(
         *torchaudio_copy(waveforms, labels),
         masked_weight=1.0,

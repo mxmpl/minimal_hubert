@@ -43,6 +43,7 @@ source = "vcs"
 line-length = 119
 
 [tool.ruff.lint]
+preview = true
 select = [
   "A",  # flake8-builtins
   "ARG",  # flake8-unused-arguments
@@ -50,7 +51,6 @@ select = [
   "B",  # flake8-bugbear
   "BLE",  # flake8-blind-except
   "C4",  # flake8-comprehensions
-  "C90",  # mccabe
   "E",  # pycodestyle error
   "EXE",  # flake8-executable
   "F",  # Pyflakes
