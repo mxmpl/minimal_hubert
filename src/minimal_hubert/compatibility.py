@@ -81,6 +81,8 @@ def _to_target_format(state_dict: dict[str, Tensor], *, for_pretraining: bool) -
             del new_state_dict[f"{layer}.k_proj.{param}"]
             del new_state_dict[f"{layer}.v_proj.{param}"]
 
+    if "feature_weight" in new_state_dict:
+        assert new_state_dict.pop("feature_weight").item() == 1.0
     if "logit_generator.label_embeddings" in new_state_dict:
         new_state_dict["logit_generator.logit_temp"] = torch.tensor(_LOGIT_TEMPERATURE)
     if not for_pretraining:
@@ -162,6 +164,30 @@ def load_state_dict_from_remote_or_local(path_or_url: str | Path) -> dict[str, t
     return state_dict
 
 
+def export_state_dict_to_hf(state_dict: dict[str, Tensor]) -> dict[str, Tensor]:
+    """Convert a minimal_hubert HuBERT state_dict to one loadable by a HuggingFace HubertModel."""
+    new_state_dict: dict[str, Tensor] = {}
+    for key, tensor in state_dict.items():
+        if m := re.match(r"^(encoder\.layers\.\d+\.attention)\.qkv\.(weight|bias)$", key):
+            layer, param = m.groups()
+            embed_dim = tensor.shape[0] // 3
+            q, k, v = tensor.split(embed_dim, dim=0)
+            new_state_dict[f"{layer}.q_proj.{param}"] = q
+            new_state_dict[f"{layer}.k_proj.{param}"] = k
+            new_state_dict[f"{layer}.v_proj.{param}"] = v
+            continue
+        if key.startswith("logit_generator."):
+            continue
+        new_key = re.sub(r"^mask_embedding$", "masked_spec_embed", key)
+        new_key = re.sub(r"(encoder\.layers\.\d+\.attention)\.proj\.", r"\1.out_proj.", new_key)
+        new_key = re.sub(r"^feature_projection\.0\.", "feature_projection.", new_key)
+        new_key = re.sub(r"^encoder\.pos_conv_embed\.convs\.0\.", "encoder.pos_conv_embed.conv.", new_key)
+        new_key = re.sub(r"\.parametrizations\.weight\.original0$", ".weight_g", new_key)
+        new_key = re.sub(r"\.parametrizations\.weight\.original1$", ".weight_v", new_key)
+        new_state_dict[new_key] = tensor
+    return new_state_dict
+
+
 def known_huberts() -> dict[Size, list[str]]:
     return {
         "base": [
@@ -176,9 +202,8 @@ def known_huberts() -> dict[Size, list[str]]:
             "utter-project/mHuBERT-147-base-2nd-iter",
             "reazon-research/japanese-hubert-base-k2",
             "TencentGameMate/chinese-hubert-base",
-            # "coml/hubert-base-vp20",
-            # "coml/hubert-base-mmsulab",
-            # "https://huggingface.co/espnet/espnet_cvhubert/blob/main/exp/hubert_iter2_train_ssl_torchaudiohubert_base_960h_pretrain_it2_raw/latest.pth",
+            "coml/hubert-base-vp20",
+            "coml/hubert-base-mmsulab",
         ],
         "large": [
             "facebook/hubert-large-ll60k",
