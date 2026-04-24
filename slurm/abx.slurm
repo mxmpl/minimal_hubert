@@ -40,7 +40,7 @@ ROOT_AUDIO=$2
 OUTPUT_ABX=$3
 PATH_CHECKPOINT=$4
 
-srun python minimal_hubert.abx \
+srun python -m minimal_hubert.abx \
   "$PATH_ITEM" \
   "$ROOT_AUDIO" \
   "$OUTPUT_ABX" \

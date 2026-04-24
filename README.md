@@ -1,20 +1,18 @@
 # Minimal implementation of HuBERT pretraining
 
-This package provides a minimal implementation of HuBERT pretraining recipe.
-It uses core functions from the [SpidR codebase](https://github.com/facebookresearch/spidr).
+This package provides a minimal, self-contained implementation of the HuBERT pretraining recipe,
+built on top of core components from the [SpidR codebase](https://github.com/facebookresearch/spidr).
 
-With this code, you should be able to train one HuBERT iteration of 400k steps in 10 hours on 16 H100s.
-We also provide distributed inference and derivation of discrete units to speed up the intermediate steps between pretraining iterations.
+One HuBERT iteration of 400k steps runs in ~10 hours on 16 H100s.
+Distributed feature extraction and discrete unit inference are included to speed up the intermediate steps between iterations.
 
 ## Install
-
-Install the Python package:
 
 ```bash
 pip install minimal-hubert
 ```
 
-Or clone this repository:
+Or clone and install from source:
 
 ```bash
 git clone https://github.com/mxmpl/minimal_hubert
@@ -24,15 +22,85 @@ uv sync
 
 ## Usage
 
-**Load a pretrained model:**
+The package exposes two model classes:
+
+- `HuBERT` — the encoder only, for inference and feature extraction.
+- `HuBERTPretrain` — the encoder with the pretraining head (logit generator and mask embedding).
+
+Both share the same `from_pretrained` interface and accept local checkpoints, HuggingFace model IDs,
+and remote URLs. Checkpoints from the original fairseq release, torchaudio, s3prl, and HuggingFace
+are all supported (base, large, and xlarge sizes).
 
 ```python
-from minimal_hubert import HuBERTPretrain
-
-model = HuBERTPretrain.from_pretrained("./path/to/checkpoint.pt")
+from minimal_hubert import HuBERT, HuBERTPretrain, known_huberts
 ```
 
-This method can load a checkpoint obtained with the package, but also from torchaudio or HuggingFace.
+**Load from a HuggingFace model ID:**
+
+```python
+model = HuBERT.from_pretrained("facebook/hubert-base-ls960")
+model = HuBERT.from_pretrained("facebook/hubert-large-ll60k")
+model = HuBERT.from_pretrained("utter-project/mHuBERT-147")
+```
+
+**Load from a remote URL (fairseq or torchaudio release):**
+
+```python
+model = HuBERT.from_pretrained("https://dl.fbaipublicfiles.com/hubert/hubert_base_ls960.pt")
+model = HuBERT.from_pretrained("https://download.pytorch.org/torchaudio/models/hubert_fairseq_large_ll60k.pth")
+```
+
+**Load from a local checkpoint:**
+
+```python
+model = HuBERT.from_pretrained("./checkpoints/hubert_base_ls960.pt")
+```
+
+**Load with the pretraining head** (e.g. to resume training or run validation):
+
+```python
+model = HuBERTPretrain.from_pretrained("./workdir/hubert-it1/checkpoint_400000.pt")
+```
+
+**List all known compatible checkpoints:**
+
+```python
+known_huberts()
+# {'base': ['facebook/hubert-base-ls960', ...], 'large': [...], 'xlarge': [...]}
+```
+
+**Run inference:**
+
+```python
+import torch
+
+waveform = torch.randn(1, 16000)  # (batch, samples) at 16 kHz
+output = model(waveform)          # final encoder output, shape (batch, time, embed_dim)
+```
+
+**Extract intermediate layer representations** (e.g. layer 9 out of 12):
+
+```python
+layers = model.get_intermediate_outputs(waveform, num_layers=9)
+# list of tensors, one per layer; layers[-1] is the output of layer 9
+repr_layer_9 = layers[-1]  # shape (batch, time, embed_dim)
+```
+
+The `before_residual` argument controls which activations are returned within each transformer layer.
+The default (`before_residual=True`) matches the convention used by fairseq and SpidR checkpoints.
+HuggingFace, torchaudio, and s3prl checkpoints follow the opposite convention (`before_residual=False`).
+This matters when applying a K-means model to extract discrete units: the K-means must have been fitted
+on features extracted with the same convention as the checkpoint it came from.
+
+```python
+# fairseq / SpidR checkpoint — default, before_residual=True
+model = HuBERT.from_pretrained("https://dl.fbaipublicfiles.com/hubert/hubert_base_ls960.pt")
+layers = model.get_intermediate_outputs(waveform, num_layers=9)  # before_residual=True
+
+# HuggingFace / torchaudio / s3prl checkpoint — must set before_residual=False
+model = HuBERT.from_pretrained("facebook/hubert-base-ls960")
+layers = model.get_intermediate_outputs(waveform, num_layers=9, before_residual=False)
+```
 
 
 ## Pretraining HuBERT, step by step
@@ -134,7 +202,7 @@ Adapt the arguments to your specific cluster. This will take ~10 hours if you ha
 Compute the validation loss for all intermediate checkpoints, find the best checkpoint and create a symlink:
 
 ```bash
-sbatch scripts/validate.slurm $PATH_VAL_MANIFEST_WITH_UNITS_IT1 $PATH_CHECKPOINTS_IT1 $VALIDATION_JSONL_IT1
+sbatch slurm/validate.slurm $PATH_VAL_MANIFEST_WITH_UNITS_IT1 $PATH_CHECKPOINTS_IT1 $VALIDATION_JSONL_IT1
 ```
 
 ### Second iteration
@@ -148,7 +216,7 @@ We consider that the best layer is the one that maximizes the ABX discriminabili
 You will need to find an "item" file with forced alignment at phoneme or triphone level to compute ABX.
 
 ```bash
-sbatch scripts/abx.slurm $PATH_ABX_ITEM $ROOT_ABX_AUDIO $OUTPUT_ABX_IT1 $PATH_CHECKPOINTS_IT1/best.pt
+sbatch slurm/abx.slurm $PATH_ABX_ITEM $ROOT_ABX_AUDIO $OUTPUT_ABX_IT1 $PATH_CHECKPOINTS_IT1/best.pt
 ```
 
 Check out the error rates in `$OUTPUT_ABX`, and select the layer with the lowest ones.
@@ -156,14 +224,14 @@ Check out the error rates in `$OUTPUT_ABX`, and select the layer with the lowest
 #### Extract features from the best layer
 
 ```bash
-sbatch scripts/features.slurm $PATH_TRAIN_MANIFEST $ROOT_TRAIN_FEATURES hubert $PATH_CHECKPOINTS_IT1/best.pt $BEST_LAYER_IT1
-sbatch scripts/features.slurm $PATH_VAL_MANIFEST $ROOT_VAL_FEATURES hubert $PATH_CHECKPOINTS_IT1/best.pt $BEST_LAYER_IT1
+sbatch slurm/features.slurm $PATH_TRAIN_MANIFEST $ROOT_TRAIN_FEATURES hubert $PATH_CHECKPOINTS_IT1/best.pt $BEST_LAYER_IT1
+sbatch slurm/features.slurm $PATH_VAL_MANIFEST $ROOT_VAL_FEATURES hubert $PATH_CHECKPOINTS_IT1/best.pt $BEST_LAYER_IT1
 ```
 
 #### Train K-means on features
 
 ```bash
-sbatch scripts/kmeans.slurm $ROOT_TRAIN_FEATURES $PATH_KMEANS_IT2 500 10
+sbatch slurm/kmeans.slurm $ROOT_TRAIN_FEATURES $PATH_KMEANS_IT2 500 10
 # sbatch slurm/kmeans.slurm $ROOT_TRAIN_FEATURES $PATH_KMEANS_IT2 500 20 # If you want use 5% of files instead
 ```
 
@@ -173,8 +241,8 @@ Adjust you subsampling ratio accordingly.
 #### Transcribe features in discrete units
 
 ```bash
-sbatch scripts/transcribe.slurm $ROOT_TRAIN_FEATURES $UNITS_JSONL_IT2 $PATH_KMEANS_IT2
-sbatch scripts/transcribe.slurm $ROOT_VAL_FEATURES $UNITS_JSONL_IT2 $PATH_KMEANS_IT2
+sbatch slurm/transcribe.slurm $ROOT_TRAIN_FEATURES $PATH_KMEANS_IT2 $UNITS_JSONL_IT2
+sbatch slurm/transcribe.slurm $ROOT_VAL_FEATURES $PATH_KMEANS_IT2 $UNITS_JSONL_IT2
 ```
 
 ```bash
@@ -194,7 +262,7 @@ python -m minimal_hubert ./configs/it2.toml -N 4 -G 4 -c 24 -t 1200 -C h100
 #### Select the best checkpoint
 
 ```bash
-sbatch scripts/validate.slurm $PATH_VAL_MANIFEST_WITH_UNITS_IT2 $PATH_CHECKPOINTS_IT2 $VALIDATION_JSONL_IT2
+sbatch slurm/validate.slurm $PATH_VAL_MANIFEST_WITH_UNITS_IT2 $PATH_CHECKPOINTS_IT2 $VALIDATION_JSONL_IT2
 ```
 
 ## Citation

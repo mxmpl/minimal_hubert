@@ -9,7 +9,7 @@ set -euo pipefail
 
 usage() {
     cat <<EOF
-Usage: $0 ROOT_FEATURES PATH_KMEANS N_CLUSTERS SUBSAMPLE
+Usage: $0 ROOT_FEATURES PATH_KMEANS OUTPUT_JSONL
 
 Inference of discrete units.
 
