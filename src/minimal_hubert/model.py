@@ -1,6 +1,8 @@
 import math
 from collections import OrderedDict
+from collections.abc import Callable
 from pathlib import Path
+from typing import Self
 
 import torch
 from huggingface_hub import PyTorchModelHubMixin
@@ -43,6 +45,23 @@ def load_state_dict_pre_hook(
 
 
 # ruff: enable[ARG001, FBT001]
+
+
+def load_pretrained_from_hub[T: HuBERT](
+    from_pretrained: Callable[..., T],
+    pretrained_model_name_or_path: str | Path,
+    *,
+    local_files_only: bool,
+    **kwargs: object,
+) -> T:
+    try:
+        return from_pretrained(pretrained_model_name_or_path, local_files_only=local_files_only, **kwargs)
+    except HFValidationError:
+        raise
+    except Exception:  # Any network failure: retry using only the local cache.
+        if local_files_only:
+            raise
+        return from_pretrained(pretrained_model_name_or_path, local_files_only=True, **kwargs)
 
 
 class LogitGenerator(nn.Module):
@@ -147,10 +166,11 @@ class HuBERT(nn.Module, PyTorchModelHubMixin):
         local_files_only: bool = False,
         revision: str | None = None,
         **model_kwargs: str,
-    ) -> "HuBERT":
+    ) -> Self:
+        model_kwargs.pop("strict", None)
         try:
-            model_kwargs.pop("strict", None)
-            return super().from_pretrained(
+            return load_pretrained_from_hub(
+                super().from_pretrained,
                 pretrained_model_name_or_path,
                 force_download=force_download,
                 token=token,
@@ -161,11 +181,14 @@ class HuBERT(nn.Module, PyTorchModelHubMixin):
                 **model_kwargs,
             )
         except HFValidationError:
-            state_dict = load_state_dict_from_remote_or_local(pretrained_model_name_or_path)
-            state_dict, size = convert_hubert_state_dict(state_dict, for_pretraining=False)
-            model = HuBERT(size=size).eval()
-            model.load_state_dict(state_dict)
-            return model
+            return cls._from_checkpoint(load_state_dict_from_remote_or_local(pretrained_model_name_or_path))
+
+    @classmethod
+    def _from_checkpoint(cls, state_dict: dict[str, Tensor]) -> Self:
+        state_dict, size = convert_hubert_state_dict(state_dict, for_pretraining=False)
+        model = cls(size=size).eval()
+        model.load_state_dict(state_dict)
+        return model
 
 
 class HuBERTPretrain(HuBERT):
@@ -200,33 +223,8 @@ class HuBERTPretrain(HuBERT):
         return features_loss + logits_loss, {"feature_loss": features_loss, "logits_loss": logits_loss}
 
     @classmethod
-    def from_pretrained(
-        cls,
-        pretrained_model_name_or_path: str | Path,
-        *,
-        force_download: bool = False,
-        token: str | bool | None = None,
-        cache_dir: str | Path | None = None,
-        local_files_only: bool = False,
-        revision: str | None = None,
-        **model_kwargs: str,
-    ) -> "HuBERTPretrain":
-        try:
-            model_kwargs.pop("strict", None)
-            # Skip HuBERT.from_pretrained to avoid going into the non-HF branch if needed
-            return super(HuBERT, cls).from_pretrained(
-                pretrained_model_name_or_path,
-                force_download=force_download,
-                token=token,
-                cache_dir=cache_dir,
-                local_files_only=local_files_only,
-                revision=revision,
-                strict=True,
-                **model_kwargs,
-            )
-        except HFValidationError:
-            state_dict = load_state_dict_from_remote_or_local(pretrained_model_name_or_path)
-            state_dict, num_classes, size = convert_hubert_state_dict(state_dict, for_pretraining=True)
-            model = HuBERTPretrain(num_classes, size=size).eval()
-            model.load_state_dict(state_dict)
-            return model
+    def _from_checkpoint(cls, state_dict: dict[str, Tensor]) -> Self:
+        state_dict, num_classes, size = convert_hubert_state_dict(state_dict, for_pretraining=True)
+        model = cls(num_classes, size=size).eval()
+        model.load_state_dict(state_dict)
+        return model
