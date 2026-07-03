@@ -1,6 +1,5 @@
 import math
 from collections import OrderedDict
-from collections.abc import Callable
 from pathlib import Path
 from typing import Self
 
@@ -45,23 +44,6 @@ def load_state_dict_pre_hook(
 
 
 # ruff: enable[ARG001, FBT001]
-
-
-def load_pretrained_from_hub[T: HuBERT](
-    from_pretrained: Callable[..., T],
-    pretrained_model_name_or_path: str | Path,
-    *,
-    local_files_only: bool,
-    **kwargs: object,
-) -> T:
-    try:
-        return from_pretrained(pretrained_model_name_or_path, local_files_only=local_files_only, **kwargs)
-    except HFValidationError:
-        raise
-    except Exception:  # Any network failure: retry using only the local cache.
-        if local_files_only:
-            raise
-        return from_pretrained(pretrained_model_name_or_path, local_files_only=True, **kwargs)
 
 
 class LogitGenerator(nn.Module):
@@ -168,9 +150,24 @@ class HuBERT(nn.Module, PyTorchModelHubMixin):
         **model_kwargs: str,
     ) -> Self:
         model_kwargs.pop("strict", None)
+        if Path(pretrained_model_name_or_path).is_file():
+            return cls._from_checkpoint(load_state_dict_from_remote_or_local(pretrained_model_name_or_path))
+        if not force_download and not local_files_only:
+            try:  # Local cache first.
+                return super().from_pretrained(
+                    pretrained_model_name_or_path,
+                    force_download=False,
+                    token=token,
+                    cache_dir=cache_dir,
+                    local_files_only=True,
+                    revision=revision,
+                    strict=True,
+                    **model_kwargs,
+                )
+            except Exception:  # noqa: BLE001  # Not in the cache: fall back to downloading.
+                pass
         try:
-            return load_pretrained_from_hub(
-                super().from_pretrained,
+            return super().from_pretrained(
                 pretrained_model_name_or_path,
                 force_download=force_download,
                 token=token,
