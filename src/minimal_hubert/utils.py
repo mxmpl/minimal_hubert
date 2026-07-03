@@ -41,7 +41,7 @@ def slurm_job_tmpdir() -> Path | None:
 
 def merge_manifest_with_units(path_manifest: str, path_units: str, *, from_mfcc: bool) -> pl.DataFrame:
     fileids = set(
-        pl.scan_ndjson(path_manifest)  # ty: ignore[unresolved-attribute]
+        pl.scan_ndjson(path_manifest)
         .select("fileid")
         .join(pl.scan_ndjson(path_units).select("fileid"), on="fileid", validate="1:1")
         .sort("fileid")

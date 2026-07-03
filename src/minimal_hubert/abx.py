@@ -8,7 +8,7 @@ from fastabx import zerospeech_abx
 from filelock import FileLock
 from spidr.config import SAMPLE_RATE
 from torch.nn import functional as F
-from torchcodec.decoders import AudioDecoder
+from torchcodec.decoders import AudioDecoder, WavDecoder
 from tqdm import tqdm
 
 from .model import HuBERT
@@ -24,10 +24,11 @@ def extract_features(
     extension: str,
 ) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    decoder = WavDecoder if extension == ".wav" else AudioDecoder
     model = model.to(device)
     num_layers = max(layers)
     for path in tqdm(sorted(audio.rglob(f"*{extension}")), desc="Extract features"):
-        samples = AudioDecoder(path).get_all_samples()
+        samples = decoder(path).get_all_samples()
         assert samples.sample_rate == SAMPLE_RATE
         data = F.layer_norm(samples.data.to(device), samples.data.shape)
         for i, feats in enumerate(model.get_intermediate_outputs(data, num_layers=num_layers)):
