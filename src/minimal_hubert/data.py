@@ -65,7 +65,7 @@ def crop_audio_and_labels(
 
 
 class SpeechWithLabelsCollatorWithMasking(SpeechCollatorWithMasking):
-    def __call__(self, batch: list[tuple[Tensor, Tensor]]) -> tuple[Tensor, Tensor, Tensor, Tensor | None]:  # ty: ignore[invalid-method-override]
+    def __call__(self, batch: list[tuple[Tensor, Tensor]]) -> tuple[Tensor, Tensor, Tensor | None, Tensor | None]:  # ty: ignore[invalid-method-override]
         num_samples = max(len(wav) for wav, _ in batch) if self.enable_padding else min(len(wav) for wav, _ in batch)
         wavs_labels_len = [
             crop_audio_and_labels(wav, label, num_samples, self.max_sample_size, rand_crop=self.rand_crop)
@@ -77,7 +77,11 @@ class SpeechWithLabelsCollatorWithMasking(SpeechCollatorWithMasking):
         lengths = conv_length(self.conv_layer_config, torch.tensor(wav_lengths))
         batch_size, max_len = wavs.size(0), int(lengths.max())
         padding_mask = torch.arange(max_len, device=lengths.device).expand(batch_size, max_len) >= lengths[:, None]
-        attn_mask = ~padding_mask[:, None, None, :].expand(batch_size, 1, max_len, max_len)
+        # Without padding the mask is all-True: pass None so SDPA can use the Flash Attention kernel.
+        if padding_mask.any():
+            attn_mask = ~padding_mask[:, None, None, :].expand(batch_size, 1, max_len, max_len)
+        else:
+            attn_mask = None
         mask_indices = self.mask_generator(padding_mask)[0]
         return wavs, labels, attn_mask, mask_indices
 

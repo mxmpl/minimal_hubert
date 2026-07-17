@@ -68,7 +68,7 @@ def train(cfg: Config) -> None:  # noqa: PLR0914
             eps=cfg.optimizer.eps,
             fused=True,
         )
-        scaler = GradScaler("cuda", enabled=cfg.optimizer.mixed_precision)
+        scaler = GradScaler("cuda", enabled=dtype == torch.float16)  # bf16 does not need loss scaling
         scheduler = LinearDecayLRScheduler(
             optimizer,
             cfg.optimizer.warmup_steps,
@@ -100,7 +100,7 @@ def train(cfg: Config) -> None:  # noqa: PLR0914
                         waveforms.to(device),
                         labels.to(device),
                         mask=mask.to(device),
-                        attention_mask=attn_mask.to(device),
+                        attention_mask=attn_mask.to(device) if attn_mask is not None else None,
                     )
                 num_frames = torch.tensor(loss.size(0), dtype=torch.long, device=device)
                 dist.all_reduce(num_frames)

@@ -28,7 +28,7 @@ def validate(model: HuBERTPretrain, loader: DataLoader, device: torch.device, dt
                 waveforms.to(device),
                 labels.to(device),
                 mask=mask.to(device),
-                attention_mask=attention_mask.to(device),
+                attention_mask=attention_mask.to(device) if attention_mask is not None else None,
             )
         total_loss += loss.mean()
         total_feature_loss += outputs["feature_loss"]
