@@ -21,7 +21,7 @@ def mfcc(waveform: Tensor) -> Tensor:
 
 def compute_and_save_mfccs(path_manifest: str | Path, root_features: str | Path) -> None:
     dataset = speech_dataset(path_manifest, normalize=False)
-    root = commonpath(dataset.manifest["path"])
+    root = commonpath(dataset.manifest["path"].to_list())
     indices = split_for_distributed(list(range(len(dataset))))
     dest = Path(root_features)
     for i in tqdm(indices):

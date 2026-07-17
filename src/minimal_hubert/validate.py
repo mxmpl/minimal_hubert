@@ -54,7 +54,9 @@ def validate_all_checkpoints(manifest: str, checkpoints: str | Path, output: str
 def find_and_symlink_best_checkpoint(checkpoints: str | Path, validation: str | Path) -> None:
     best = pl.read_ndjson(validation).sort("name").filter(pl.col("loss") == pl.col("loss").min()).to_dicts()[0]
     logger.info("Best checkpoint: '%s' with %s val. loss", best["name"], best["loss"])
-    (Path(checkpoints) / "best.pt").symlink_to(f"{best['name']}.pt")
+    best_link = Path(checkpoints) / "best.pt"
+    best_link.unlink(missing_ok=True)
+    best_link.symlink_to(f"{best['name']}.pt")
 
 
 if __name__ == "__main__":

@@ -57,8 +57,6 @@ class LogitGenerator(nn.Module):
 
     def forward(self, x: Tensor, label: Tensor) -> Tensor:
         x = self.final_proj(x)
-        if (label < 0).any():
-            raise ValueError("Negative labels found: slicing when wrong")
         pos = torch.index_select(self.label_embeddings, 0, label).unsqueeze(0)
         negs = self.label_embeddings.unsqueeze(1).expand(-1, x.size(0), -1)
         targets = torch.cat([pos, negs], dim=0)

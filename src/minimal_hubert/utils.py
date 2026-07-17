@@ -40,21 +40,21 @@ def slurm_job_tmpdir() -> Path | None:
 
 
 def merge_manifest_with_units(path_manifest: str, path_units: str, *, from_mfcc: bool) -> pl.DataFrame:
+    manifest = pl.scan_ndjson(path_manifest)
+    units = pl.scan_ndjson(path_units)
     fileids = set(
-        pl.scan_ndjson(path_manifest)
-        .select("fileid")
-        .join(pl.scan_ndjson(path_units).select("fileid"), on="fileid", validate="1:1")
+        manifest.select("fileid")
+        .join(units.select("fileid"), on="fileid", validate="1:1")
         .sort("fileid")
         .collect()
         .to_series()
     )
-    length = conv_length(DEFAULT_CONV_LAYER_CONFIG, pl.read_ndjson(path_manifest)["num_samples"].to_torch())
+    length = conv_length(DEFAULT_CONV_LAYER_CONFIG, manifest.select("num_samples").collect()["num_samples"].to_torch())
     return (
         pl.concat(
             (
-                pl.read_ndjson(path_manifest).sort("fileid"),
-                pl.scan_ndjson(path_units)
-                .sort("fileid")
+                manifest.sort("fileid").collect(),
+                units.sort("fileid")
                 .filter(pl.col("fileid").is_in(fileids))
                 .drop("fileid")
                 .with_columns(pl.col("units").list.gather_every(2) if from_mfcc else pl.col("units"))
