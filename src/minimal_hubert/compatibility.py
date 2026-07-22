@@ -119,7 +119,12 @@ def convert_hubert_state_dict(
 def convert_hubert_state_dict(
     state_dict: dict[str, Any], *, for_pretraining: bool
 ) -> tuple[dict[str, torch.Tensor], int, Size] | tuple[dict[str, torch.Tensor], Size]:
-    new_state_dict = state_dict.get("model", state_dict)
+    for key in ("model", "model_weight"):  # "model_weight" is the s3prl format
+        if key in state_dict:
+            new_state_dict = state_dict[key]
+            break
+    else:
+        new_state_dict = state_dict
     consume_prefix_in_state_dict_if_present(new_state_dict, "module.")
     new_state_dict = _to_target_format(new_state_dict, for_pretraining=for_pretraining)
     size = size_from_state_dict(new_state_dict)
