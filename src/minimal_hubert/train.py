@@ -82,7 +82,12 @@ def train(cfg: Config) -> None:  # noqa: PLR0914
         step, epoch = int(ckpt.step), int(ckpt.epoch)
         stack.callback(lambda: ckpt.save(step, epoch))
         model.compile(dynamic=True)
-        ddp_model = DistributedDataParallel(model, device_ids=[device.index], find_unused_parameters=True)
+        ddp_model = DistributedDataParallel(
+            model,
+            device_ids=[device.index],
+            broadcast_buffers=False,  # only buffer is the constant logit_temp
+            find_unused_parameters=True,
+        )
 
         logger.info("Starting training loop")
         meters = AverageMeters(["loss", "grad_norm", "batch_size", "feature_loss"], device=device)
@@ -95,15 +100,16 @@ def train(cfg: Config) -> None:  # noqa: PLR0914
             for waveforms, labels, attn_mask, mask in loader:
                 if step >= cfg.optimizer.max_steps:
                     break
+                num_frames = mask.sum().to(device, non_blocking=True)
+                num_frames_work = dist.all_reduce(num_frames, async_op=True)
                 with torch.autocast("cuda", dtype, cfg.optimizer.mixed_precision):
                     loss, outputs = ddp_model(
-                        waveforms.to(device),
-                        labels.to(device),
-                        mask=mask.to(device),
-                        attention_mask=attn_mask.to(device) if attn_mask is not None else None,
+                        waveforms.to(device, non_blocking=True),
+                        labels.to(device, non_blocking=True),
+                        mask=mask.to(device, non_blocking=True),
+                        attention_mask=attn_mask.to(device, non_blocking=True) if attn_mask is not None else None,
                     )
-                num_frames = torch.tensor(loss.size(0), dtype=torch.long, device=device)
-                dist.all_reduce(num_frames)
+                num_frames_work.wait()
                 loss = loss.sum() * world_size / num_frames
                 scaler.scale(loss).backward()
                 scaler.unscale_(optimizer)

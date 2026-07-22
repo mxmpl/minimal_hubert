@@ -78,10 +78,8 @@ class SpeechWithLabelsCollatorWithMasking(SpeechCollatorWithMasking):
         batch_size, max_len = wavs.size(0), int(lengths.max())
         padding_mask = torch.arange(max_len, device=lengths.device).expand(batch_size, max_len) >= lengths[:, None]
         # Without padding the mask is all-True: pass None so SDPA can use the Flash Attention kernel.
-        if padding_mask.any():
-            attn_mask = ~padding_mask[:, None, None, :].expand(batch_size, 1, max_len, max_len)
-        else:
-            attn_mask = None
+        # With padding, the (batch, 1, 1, max_len) mask broadcasts over heads and queries.
+        attn_mask = ~padding_mask[:, None, None, :] if bool(padding_mask.any()) else None
         mask_indices = self.mask_generator(padding_mask)[0]
         return wavs, labels, attn_mask, mask_indices
 

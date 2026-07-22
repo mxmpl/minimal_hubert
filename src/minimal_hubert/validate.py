@@ -25,10 +25,10 @@ def validate(model: HuBERTPretrain, loader: DataLoader, device: torch.device, dt
     for waveforms, labels, attention_mask, mask in loader:
         with torch.autocast("cuda", dtype, mixed_precision):
             loss, outputs = model(
-                waveforms.to(device),
-                labels.to(device),
-                mask=mask.to(device),
-                attention_mask=attention_mask.to(device) if attention_mask is not None else None,
+                waveforms.to(device, non_blocking=True),
+                labels.to(device, non_blocking=True),
+                mask=mask.to(device, non_blocking=True),
+                attention_mask=attention_mask.to(device, non_blocking=True) if attention_mask is not None else None,
             )
         total_loss += loss.mean()
         total_feature_loss += outputs["feature_loss"]

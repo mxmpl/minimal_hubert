@@ -110,6 +110,7 @@ def hubert_data_config(manifest: str) -> DataConfig:
         num_buckets=100,
         num_workers=24,
         prefetch_factor=4,
+        pin_memory=True,
         bucket_method="percentile",
     )
 
