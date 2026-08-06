@@ -204,7 +204,7 @@ class HuBERTPretrain(HuBERT):
         attention_mask: Tensor | None,
     ) -> tuple[Tensor, dict[str, Tensor]]:
         x = self.feature_extractor(waveforms)
-        features_pen = x.float().pow(2).mean()
+        features_loss = x.float().pow(2).mean()
         x = self.feature_projection(x)
         if mask is not None:
             x = torch.where(mask.unsqueeze(-1), self.mask_embedding.to(x.dtype).expand_as(x), x)
@@ -213,7 +213,6 @@ class HuBERTPretrain(HuBERT):
         x = self.encoder(x, attention_mask)
         mask_indices = torch.nonzero(mask, as_tuple=True)
         logits = self.logit_generator(x[mask_indices], labels[mask_indices])
-        features_loss = features_pen * logits.shape[0]
         logits_loss = -F.log_softmax(logits, dim=1)[:, 0]
         return features_loss + logits_loss, {"feature_loss": features_loss, "logits_loss": logits_loss}
 
