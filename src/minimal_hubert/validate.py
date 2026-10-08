@@ -4,6 +4,7 @@ from pathlib import Path
 import orjson
 import polars as pl
 import torch
+from spidr.checkpoint import find_checkpoints
 from spidr.config import MaskingConfig
 from spidr.environment import set_seed, setup_environment, setup_pytorch
 from spidr.tools import init_logger
@@ -43,8 +44,9 @@ def validate_all_checkpoints(manifest: str, checkpoints: str | Path, output: str
     setup_pytorch(use_deterministic=False)
     setup_environment()
     device, dtype = torch.device("cuda"), torch.bfloat16
-    loader = build_dataloader_with_labels(hubert_data_config(manifest), MaskingConfig())
-    for path in sorted(Path(checkpoints).glob("*.pt")):
+    for path in find_checkpoints(Path(checkpoints)):
+        set_seed(seed)  # Same batches and masks for every checkpoint
+        loader = build_dataloader_with_labels(hubert_data_config(manifest), MaskingConfig())
         model = HuBERTPretrain.from_pretrained(path).to(device)
         losses = validate(model, loader, device, dtype)
         with Path(output).open("ab") as f:

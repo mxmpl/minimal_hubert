@@ -6,4 +6,3 @@ wheels/
 *.egg-info
 .venv
 .hypothesis
-uv.lock

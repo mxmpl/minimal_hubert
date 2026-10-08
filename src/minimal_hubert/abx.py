@@ -15,6 +15,7 @@ from .model import HuBERT
 from .utils import slurm_job_tmpdir
 
 
+@torch.inference_mode()
 def extract_features(
     model: HuBERT,
     audio: Path,
@@ -51,9 +52,10 @@ def compute_and_save_abx(
 ) -> None:
     item_name = Path(item).stem
     model = HuBERT.from_pretrained(checkpoint)
-    layers = set(range(1, 13) if layers is None else layers)
+    num_layers = len(model.encoder.layers)
+    layers = set(range(1, num_layers + 1) if layers is None else layers)
     assert min(layers) >= 1
-    assert max(layers) <= 12
+    assert max(layers) <= num_layers
     lock = FileLock(f"{output}.lock")
     with TemporaryDirectory(dir=tmpdir) as features:
         extract_features(model, Path(audio), Path(features), layers, extension=extension)

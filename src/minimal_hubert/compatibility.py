@@ -85,6 +85,7 @@ def _to_target_format(state_dict: dict[str, Tensor], *, for_pretraining: bool) -
         new_state_dict["logit_generator.logit_temp"] = torch.tensor(_LOGIT_TEMPERATURE)
     if not for_pretraining:
         new_state_dict.pop("mask_embedding", None)
+        new_state_dict = {k: v for k, v in new_state_dict.items() if not k.startswith("logit_generator.")}
     return new_state_dict
 
 
@@ -154,6 +155,8 @@ def fake_fairseq_dictionary() -> Generator[None, None, None]:
 
 
 def load_state_dict_from_remote_or_local(path_or_url: str | Path) -> dict[str, torch.Tensor]:
+    if not Path(path_or_url).is_file() and not str(path_or_url).startswith(("http://", "https://")):
+        raise FileNotFoundError(path_or_url)
     loader = torch.load if Path(path_or_url).is_file() else load_state_dict_from_url
     try:
         state_dict = loader(str(path_or_url), map_location="cpu", weights_only=True)

@@ -12,6 +12,7 @@ from spidr.data.dataset import (
     conv_length,
 )
 from spidr.data.masks import MaskGenerator
+from spidr.models.components import mask_from_index
 from torch import Tensor
 from torch import distributed as dist
 from torch.nn.utils.rnn import pad_sequence
@@ -80,8 +81,8 @@ class SpeechWithLabelsCollatorWithMasking(SpeechCollatorWithMasking):
         # Without padding the mask is all-True: pass None so SDPA can use the Flash Attention kernel.
         # With padding, the (batch, 1, 1, max_len) mask broadcasts over heads and queries.
         attn_mask = ~padding_mask[:, None, None, :] if bool(padding_mask.any()) else None
-        mask_indices = self.mask_generator(padding_mask)[0]
-        return wavs, labels, attn_mask, mask_indices
+        mask = mask_from_index(self.mask_generator(padding_mask)[0], max_len)
+        return wavs, labels, attn_mask, mask
 
 
 def build_dataloader_with_labels(data_cfg: DataConfig, mask_cfg: MaskingConfig) -> DataLoader:

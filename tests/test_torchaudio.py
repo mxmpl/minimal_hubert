@@ -119,7 +119,7 @@ def test_torchaudio_loss(
         masked_weight=1.0,
         unmasked_weight=0.0,
         feature_weight=1.0,
-        reduction="mean",
+        reduction="sum",
     )
     y = my_hubert(waveforms, labels, mask=mask, attention_mask=None)[0].mean()
-    torch.testing.assert_close(x, y)
+    torch.testing.assert_close(x / mask.sum(), y)

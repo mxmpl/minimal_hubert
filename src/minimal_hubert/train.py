@@ -80,7 +80,8 @@ def train(cfg: Config) -> None:  # noqa: PLR0914
         ckpt.init_state(model=model, optimizer=optimizer, scheduler=scheduler, scaler=scaler)
         ckpt.load_existing_run()
         step, epoch = int(ckpt.step), int(ckpt.epoch)
-        stack.callback(lambda: ckpt.save(step, epoch))
+        if is_main:
+            stack.callback(lambda: ckpt.save(step, epoch))
         model.compile(dynamic=True)
         ddp_model = DistributedDataParallel(
             model,
