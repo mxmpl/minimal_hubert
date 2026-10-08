@@ -78,7 +78,7 @@ def merge_manifest_with_units(path_manifest: str, path_units: str, output: str, 
         units = units.with_columns(pl.col("units").list.gather_every(2))
     columns = manifest.collect_schema().names()
     (  # Units are streamed through, only the (small) manifest is held in memory for the join
-        units.join(manifest, on="fileid", how="inner", build_side="prefer_right", maintain_order="left")
+        units.join(manifest, on="fileid", how="inner", maintain_order="left")
         .select(*columns, pl.col("units").list.head(conv_length_expr(pl.col("num_samples"))))
         .sink_ndjson(output, engine="streaming")
     )
