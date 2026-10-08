@@ -75,7 +75,8 @@ class HuBERTConfig:
                     encoder_dropout=0.0,
                     encoder_layer_drop=0.0,
                 )
-        raise ValueError(f"Invalid size {size}. Must be either 'base', 'large', or 'xlarge'")
+        msg = f"Invalid size {size}. Must be either 'base', 'large', or 'xlarge'"
+        raise ValueError(msg)
 
 
 @dataclass(frozen=True)

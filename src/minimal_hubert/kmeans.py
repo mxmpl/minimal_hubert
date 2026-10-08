@@ -30,7 +30,8 @@ def build_mmap_features(
     rows = 0
     for path in tqdm(files, "Infer concatenated features shape"):
         shape = torch.load(path, map_location="cpu", mmap=True).shape
-        assert len(shape) == 2 and shape[1] == dim
+        assert len(shape) == 2
+        assert shape[1] == dim
         rows += shape[0]
     logger.info("Shape: %s", (rows, dim))
     mmap = np.memmap(filename, dtype=np.float32, mode="w+", shape=(rows, dim))

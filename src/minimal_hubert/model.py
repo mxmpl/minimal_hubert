@@ -26,7 +26,7 @@ from .compatibility import _LOGIT_TEMPERATURE, Size, convert_hubert_state_dict, 
 from .config import HuBERTConfig
 
 
-# ruff: disable[ARG001, FBT001]
+# ruff: disable[unused-function-argument, boolean-type-hint-positional-argument]
 def load_state_dict_pre_hook(
     module: nn.Module,
     state_dict: OrderedDict,
@@ -43,7 +43,7 @@ def load_state_dict_pre_hook(
     state_dict.update(new_sd)
 
 
-# ruff: enable[ARG001, FBT001]
+# ruff: enable[unused-function-argument, boolean-type-hint-positional-argument]
 
 
 class LogitGenerator(nn.Module):
@@ -162,7 +162,8 @@ class HuBERT(nn.Module, PyTorchModelHubMixin):
                     strict=True,
                     **model_kwargs,
                 )
-            except Exception:  # noqa: BLE001  # Not in the cache: fall back to downloading.
+            # Not in the cache: fall back to downloading
+            except Exception:  # ruff: ignore[blind-except]
                 pass
         try:
             return super().from_pretrained(

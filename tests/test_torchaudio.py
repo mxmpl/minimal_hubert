@@ -87,7 +87,11 @@ def torchaudio_hubert_loss(
     feature_weight: float,
     reduction: str,
 ) -> Tensor:
-    """From https://github.com/pytorch/audio/blob/main/examples/hubert/loss/hubert_loss.py"""
+    """From https://github.com/pytorch/audio/blob/main/examples/hubert/loss/hubert_loss.py.
+
+    Returns:
+        The loss as defined in the torchaudio repository.
+    """
     loss = feature_penalty * feature_weight * logit_m.shape[0]
     target_m = torch.zeros(logit_m.shape[0], dtype=torch.long, device=logit_m.device)
     loss_m = F.cross_entropy(logit_m, target_m, reduction=reduction)

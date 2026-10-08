@@ -13,7 +13,7 @@ import torch
 from torch import Tensor
 from torch.hub import load_state_dict_from_url
 from torch.nn.modules.utils import consume_prefix_in_state_dict_if_present
-from torchaudio.models.wav2vec2.utils.import_fairseq import _convert_state_dict  # noqa: PLC2701
+from torchaudio.models.wav2vec2.utils.import_fairseq import _convert_state_dict  # ruff: ignore[import-private-name]
 
 _LOGIT_TEMPERATURE = 0.1
 
@@ -98,7 +98,8 @@ def size_from_state_dict(state_dict: dict[str, Tensor]) -> Size:
         return "large"
     if layers == set(range(48)):
         return "xlarge"
-    raise ValueError(f"Invalid model size configuration. We found those layers: {layers}")
+    msg = f"Invalid model size configuration. We found those layers: {layers}"
+    raise ValueError(msg)
 
 
 @overload
@@ -171,7 +172,11 @@ def load_state_dict_from_remote_or_local(path_or_url: str | Path) -> dict[str, t
 
 
 def export_state_dict_to_hf(state_dict: dict[str, Tensor]) -> dict[str, Tensor]:
-    """Convert a minimal_hubert HuBERT state_dict to one loadable by a HuggingFace HubertModel."""
+    """Convert a minimal_hubert HuBERT state_dict to one loadable by a HuggingFace HubertModel.
+
+    Returns:
+        The minimal_hubert state_dict converted to HuggingFace format.
+    """
     new_state_dict: dict[str, Tensor] = {}
     for key, tensor in state_dict.items():
         if m := re.match(r"^(encoder\.layers\.\d+\.attention)\.qkv\.(weight|bias)$", key):

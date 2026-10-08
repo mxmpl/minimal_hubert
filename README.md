@@ -75,7 +75,7 @@ known_huberts()
 import torch
 
 waveform = torch.randn(1, 16000)  # (batch, samples) at 16 kHz
-output = model(waveform)          # final encoder output, shape (batch, time, embed_dim)
+output = model(waveform)  # final encoder output, shape (batch, time, embed_dim)
 ```
 
 **Extract intermediate layer representations** (e.g. layer 9 out of 12):

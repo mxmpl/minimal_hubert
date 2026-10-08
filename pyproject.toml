@@ -44,42 +44,21 @@ line-length = 119
 [tool.ruff.lint]
 preview = true
 select = [
-  "A",  # flake8-builtins
-  "ARG",  # flake8-unused-arguments
-  "ANN",  # flake8-annotations
-  "B",  # flake8-bugbear
-  "BLE",  # flake8-blind-except
-  "C4",  # flake8-comprehensions
-  "E",  # pycodestyle error
-  "EXE",  # flake8-executable
-  "F",  # Pyflakes
-  "FBT",  # flake8-boolean-trap
-  "FLY",  # flynt
-  "FURB",  # refurb
-  "G",  # flake8-logging-format
-  "I",  # isort
-  "ICN",  # flake8-import-conventions
-  "ISC",  # flake8-implicit-str-concat
-  "LOG",  # flake8-logging
-  "N",  # pep8-naming
-  "NPY",  # NumPy-specific rules
-  "PERF",  # Perflint
-  "PIE",  # flake8-pie
-  "PGH",  # pygrep-hooks
-  "PL",  # Pylint
-  "PTH",  # flake8-use-pathlib
-  "Q",  # flake8-quotes
-  "RET",  # flake8-return
-  "RSE",  # flake8-raise
-  "RUF",  # Ruff-specific rules
-  "SIM",  # flake8-simplify
-  "SLF",  # flake8-slots
-  "T10",  # flake8-debugger
-  "TC",  # flake8-type-checking
-  "TD",  # flake8-todos
-  "TID",  # flake8-tidy-imports
-  "UP",  # pyupgrade
-  "W",  # pycodestyle warning
+  "correctness",
+  "suspicious",
+  "complexity",
+  "performance",
+  "style",
+  "pedantic",
+  "formatting",
+  "security",
+]
+ignore = [
+  "missing-trailing-comma",
+  "CPY",  # flake8-copyright
+  "D",  # pydocstyle
+  "S",  # flake8-bandit
+  "TRY",  # tryceratops
 ]
 
 [tool.ruff.lint.pylint]
