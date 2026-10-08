@@ -24,9 +24,8 @@ def transcribe(root: str | Path, kmeans: MiniBatchKMeans, jsonl: str | Path, *, 
         buffer.clear()
 
     for path in tqdm(files):
-        fileid = str(path.relative_to(root)).removesuffix(".pt")
         units = kmeans.predict(torch.load(path).numpy()).tolist()
-        buffer.append(orjson.dumps({"file": fileid, "units": units}, option=orjson.OPT_APPEND_NEWLINE))
+        buffer.append(orjson.dumps({"fileid": path.stem, "units": units}, option=orjson.OPT_APPEND_NEWLINE))
         if len(buffer) >= flush_every:
             flush()
     flush()

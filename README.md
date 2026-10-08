@@ -113,7 +113,7 @@ pretrained model.
 This tutorial expects you to have access to a SLURM cluster.
 Ideally, you should have access to at least 16 H100 or A100 GPUs at a time for pretraining.
 It's also better to have access to a lot of (possibly older) GPUs in parallel for fast extraction of intermediate features.
-This tutorial been tested on the Jean Zay supercomputer.
+This tutorial has been tested on the Jean Zay supercomputer.
 
 You can modify the arguments of the scripts in `slurm/` to adapt to your cluster constraints, or directly use the
 corresponding entry-points.
@@ -129,10 +129,11 @@ Replace all environment variables below with the actual paths:
   - `ROOT_TRAIN_FEATURES`, `ROOT_VAL_FEATURES`: directories for HuBERT features (for it2)
   - `PATH_KMEANS_IT{1,2}`: path to the K-means checkpoint
   - `UNITS_JSONL_IT{1,2}`: path to the JSONL with discrete units
-  - `PATH_TRAIN_MANIFEST_WITH_UNITS_IT{1,2}`, `PATH_VAL_MANIFEST_WITH_UNITS_IT1`: path to the manifest files with units
+  - `PATH_TRAIN_MANIFEST_WITH_UNITS_IT{1,2}`, `PATH_VAL_MANIFEST_WITH_UNITS_IT{1,2}`: path to the manifest files with units
   - `PATH_CHECKPOINTS_IT{1,2}`: directory with all checkpoints (in "workdir")
   - `VALIDATION_JSONL_IT{1,2}`: JSONL file with validation losses
   - `OUTPUT_ABX_IT{1,2}`: JSONL file with ABX error rates
+  - `BEST_LAYER_IT1`: layer of the first iteration model with the lowest ABX error rate
 
 ### Prerequisites
 
@@ -192,7 +193,7 @@ Fill the empty fields in `./configs/it1.toml` ("manifest" and "workdir").
 Then launch a pretraining job:
 
 ```bash
-python -m minimal_hubert ./configs/it1.toml -N 4 -G 4 -c 24 -t 1200 -C h100
+python -m minimal_hubert ./configs/it1.toml -A $SLURM_ACCOUNT --dump ./submitit -N 4 -G 4 -c 24 -t 1200 -C h100
 ```
 
 Adapt the arguments to your specific cluster. This will take ~10 hours if you have 16 H100s.
@@ -219,7 +220,7 @@ You will need to find an "item" file with forced alignment at phoneme or triphon
 sbatch slurm/abx.slurm $PATH_ABX_ITEM $ROOT_ABX_AUDIO $OUTPUT_ABX_IT1 $PATH_CHECKPOINTS_IT1/best.pt
 ```
 
-Check out the error rates in `$OUTPUT_ABX`, and select the layer with the lowest ones.
+Check out the error rates in `$OUTPUT_ABX_IT1`, and select the layer with the lowest ones.
 
 #### Extract features from the best layer
 
@@ -236,7 +237,7 @@ sbatch slurm/kmeans.slurm $ROOT_TRAIN_FEATURES $PATH_KMEANS_IT2 500 10
 ```
 
 This can run for a long time if you have a large dataset (much longer than K-means on MFCCs).
-Adjust you subsampling ratio accordingly.
+Adjust your subsampling ratio accordingly.
 
 #### Transcribe features in discrete units
 
@@ -256,7 +257,7 @@ Fill the empty fields in `./configs/it2.toml` ("manifest" and "workdir").
 Then launch a pretraining job:
 
 ```bash
-python -m minimal_hubert ./configs/it2.toml -N 4 -G 4 -c 24 -t 1200 -C h100
+python -m minimal_hubert ./configs/it2.toml -A $SLURM_ACCOUNT --dump ./submitit -N 4 -G 4 -c 24 -t 1200 -C h100
 ```
 
 #### Select the best checkpoint

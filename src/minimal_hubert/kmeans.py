@@ -90,7 +90,7 @@ if __name__ == "__main__":
         "--subsample",
         type=int,
         default=1,
-        help="Subsampling factor: use every Nth file for training (default: 1 = all files).",
+        help="Subsampling factor: train on a random 1/N of the files (default: 1 = all files).",
     )
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
     parser.add_argument(

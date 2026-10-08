@@ -20,6 +20,9 @@ dependencies = [
 ]
 dynamic = ["version"]
 
+[project.urls]
+Repository = "https://github.com/mxmpl/minimal_hubert"
+
 [dependency-groups]
 dev = [
   "prek>=0.3.10",

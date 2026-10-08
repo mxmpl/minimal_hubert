@@ -14,7 +14,7 @@ Usage: $0 PATH_ITEM ROOT_AUDIO OUTPUT_ABX PATH_CHECKPOINT
 Compute ABX discriminability of HuBERT representations.
 
 Arguments:
-    PATH_MANIFEST    Path to the item file
+    PATH_ITEM        Path to the item file
     ROOT_AUDIO       Path to the audio files
     OUTPUT_ABX       Path to the output JSONL file with ABX scores
     PATH_CHECKPOINT  Path to HuBERT checkpoint file

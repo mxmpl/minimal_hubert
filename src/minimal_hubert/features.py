@@ -62,6 +62,8 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint", type=Path, help="Path to HuBERT checkpoint file")
     parser.add_argument("--layer", type=int, help="Layer number to extract features from")
     args = parser.parse_args()
+    if args.type == "hubert" and (args.checkpoint is None or args.layer is None):
+        parser.error("--checkpoint and --layer are required with --type hubert")
     if args.type == "mfcc":
         compute_and_save_mfccs(args.manifest, args.features)
     else:

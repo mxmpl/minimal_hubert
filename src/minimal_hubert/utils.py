@@ -1,3 +1,4 @@
+import logging
 import math
 import os
 import socket
@@ -6,7 +7,9 @@ from pathlib import Path
 
 import polars as pl
 from spidr.config import DEFAULT_CONV_LAYER_CONFIG
-from spidr.data.dataset import conv_length
+from spidr.data.utils import read_manifest
+
+logger = logging.getLogger()
 
 
 def split_for_distributed[T](sequence: Sequence[T]) -> Sequence[T]:
@@ -39,32 +42,45 @@ def slurm_job_tmpdir() -> Path | None:
     return None
 
 
-def merge_manifest_with_units(path_manifest: str, path_units: str, *, from_mfcc: bool) -> pl.DataFrame:
-    manifest = pl.scan_ndjson(path_manifest)
-    units = pl.scan_ndjson(path_units)
-    fileids = set(
-        manifest.select("fileid")
-        .join(units.select("fileid"), on="fileid", validate="1:1")
-        .sort("fileid")
-        .collect()
-        .to_series()
-    )
-    length = conv_length(DEFAULT_CONV_LAYER_CONFIG, manifest.select("num_samples").collect()["num_samples"].to_torch())
-    return (
-        pl.concat(
-            (
-                manifest.sort("fileid").collect(),
-                units.sort("fileid")
-                .filter(pl.col("fileid").is_in(fileids))
-                .drop("fileid")
-                .with_columns(pl.col("units").list.gather_every(2) if from_mfcc else pl.col("units"))
-                .collect(),
-            ),
-            how="horizontal",
-        )
-        .with_columns(pl.Series(name="length", values=length))
-        .with_columns(pl.col("units").list.slice(offset=0, length=pl.col("length")))
-        .drop("length")
+def conv_length_expr(num_samples: pl.Expr) -> pl.Expr:  # spidr.data.dataset.conv_length, as a polars expression
+    for _, kernel_size, stride in DEFAULT_CONV_LAYER_CONFIG:
+        num_samples = ((num_samples - kernel_size) // stride + 1).clip(lower_bound=0)
+    return num_samples
+
+
+def scan_manifest(path: str | Path) -> pl.LazyFrame:
+    match Path(path).suffix:
+        case ".csv":
+            return pl.scan_csv(path)
+        case ".jsonl":
+            return pl.scan_ndjson(path)
+    return read_manifest(path).lazy()
+
+
+def merge_manifest_with_units(path_manifest: str, path_units: str, output: str, *, from_mfcc: bool) -> None:
+    # The units file can be very large: it is only streamed, never fully loaded in memory.
+    # Rows are written in the order of the units file, and files without units are dropped.
+    manifest = scan_manifest(path_manifest)
+    units = pl.scan_ndjson(path_units, schema={"fileid": pl.String, "units": pl.List(pl.Int32)})
+
+    # First pass on the fileids only, to check that the join is one-to-one
+    manifest_ids = manifest.select("fileid").collect()["fileid"]
+    units_ids = units.select("fileid").collect(engine="streaming")["fileid"]
+    for name, ids in (("manifest", manifest_ids), ("units", units_ids)):
+        if ids.is_duplicated().any():
+            msg = f"Duplicate fileids in the {name} file, e.g. {ids.filter(ids.is_duplicated())[0]!r}"
+            raise ValueError(msg)
+    if num_missing := int((~manifest_ids.is_in(units_ids.implode())).sum()):
+        logger.warning("%d/%d files in the manifest have no units and are dropped", num_missing, len(manifest_ids))
+    del manifest_ids, units_ids
+
+    if from_mfcc:  # MFCC frames are every 10ms, HuBERT frames every 20ms
+        units = units.with_columns(pl.col("units").list.gather_every(2))
+    columns = manifest.collect_schema().names()
+    (  # Units are streamed through, only the (small) manifest is held in memory for the join
+        units.join(manifest, on="fileid", how="inner", build_side="prefer_right", maintain_order="left")
+        .select(*columns, pl.col("units").list.head(conv_length_expr(pl.col("num_samples"))))
+        .sink_ndjson(output, engine="streaming")
     )
 
 
@@ -81,4 +97,4 @@ if __name__ == "__main__":
         help="Add this flag if units are derived from MFCC (10ms instead of 20ms)",
     )
     args = parser.parse_args()
-    merge_manifest_with_units(args.manifest, args.units, from_mfcc=args.from_mfcc).write_ndjson(args.output)
+    merge_manifest_with_units(args.manifest, args.units, args.output, from_mfcc=args.from_mfcc)

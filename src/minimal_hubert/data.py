@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import orjson
 import torch
 from spidr.config import DEFAULT_CONV_LAYER_CONFIG, DataConfig, MaskingConfig
 from spidr.data.dataset import (
@@ -35,7 +36,8 @@ class SpeechDatasetWithLabelsFromFiles(SpeechDatasetFromFiles):
 
 def speech_dataset_with_labels(manifest_path: Path | str, *, normalize: bool) -> SpeechDataset:
     with Path(manifest_path).open("r", encoding="utf-8") as f:
-        columns = set(f.readline().strip().split(","))
+        header = f.readline()
+    columns = set(orjson.loads(header)) if Path(manifest_path).suffix == ".jsonl" else set(header.strip().split(","))
     if {"fileid", "path", "num_samples", "archive", "byte_offset", "byte_size"}.issubset(columns):
         return SpeechDatasetWithLabelsFromArchive(manifest_path, normalize=normalize)
     return SpeechDatasetWithLabelsFromFiles(manifest_path, normalize=normalize)
